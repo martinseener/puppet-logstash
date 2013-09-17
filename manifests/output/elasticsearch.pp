@@ -13,6 +13,9 @@
 #   -J-Des.node.foo=) This plugin will join your elasticsearch cluster, so
 #   it will show up in elasticsearch's cluster health status.  You can
 #   learn more about elasticsearch at http://elasticsearch.org
+#   Operational Notes  Your firewalls will need to permit port 9300 in
+#   both directions (from logstash to elasticsearch, and elasticsearch to
+#   logstash)
 #
 #
 # === Parameters
@@ -109,7 +112,7 @@
 #   The port for ElasticSearch transport to use. This is not the
 #   ElasticSearch REST API port (normally 9200).
 #   Value type is number
-#   Default value: 9300
+#   Default value: "9300-9400"
 #   This variable is optional
 #
 # [*tags*]
@@ -127,20 +130,19 @@
 #   Default value: ""
 #   This variable is optional
 #
-#
-#
-# === Examples
-#
-#
-#
+# [*instances*]
+#   Array of instance names to which this define is.
+#   Value type is array
+#   Default value: [ 'array' ]
+#   This variable is optional
 #
 # === Extra information
 #
-#  This define is created based on LogStash version 1.1.9
+#  This define is created based on LogStash version 1.1.12
 #  Extra information about this output can be found at:
-#  http://logstash.net/docs/1.1.9/outputs/elasticsearch
+#  http://logstash.net/docs/1.1.12/outputs/elasticsearch
 #
-#  Need help? http://logstash.net/docs/1.1.9/learn
+#  Need help? http://logstash.net/docs/1.1.12/learn
 #
 # === Authors
 #
@@ -161,37 +163,60 @@ define logstash::output::elasticsearch (
   $node_name             = '',
   $port                  = '',
   $tags                  = '',
-  $type                  = ''
+  $type                  = '',
+  $instances             = [ 'agent' ]
 ) {
-
 
   require logstash::params
 
-  #### Validate parameters
-  if $exclude_tags {
-    validate_array($exclude_tags)
-    $arr_exclude_tags = join($exclude_tags, '\', \'')
-    $opt_exclude_tags = "  exclude_tags => ['${arr_exclude_tags}']\n"
+  File {
+    owner => $logstash::logstash_user,
+    group => $logstash::logstash_group
   }
 
-  if $tags {
+  if $logstash::multi_instance == true {
+
+    $confdirstart = prefix($instances, "${logstash::configdir}/")
+    $conffiles    = suffix($confdirstart, "/config/output_elasticsearch_${name}")
+    $services     = prefix($instances, 'logstash-')
+    $filesdir     = "${logstash::configdir}/files/output/elasticsearch/${name}"
+
+  } else {
+
+    $conffiles = "${logstash::configdir}/conf.d/output_elasticsearch_${name}"
+    $services  = 'logstash'
+    $filesdir  = "${logstash::configdir}/files/output/elasticsearch/${name}"
+
+  }
+
+  #### Validate parameters
+
+  validate_array($instances)
+
+  if ($tags != '') {
     validate_array($tags)
     $arr_tags = join($tags, '\', \'')
     $opt_tags = "  tags => ['${arr_tags}']\n"
   }
 
-  if $fields {
+  if ($exclude_tags != '') {
+    validate_array($exclude_tags)
+    $arr_exclude_tags = join($exclude_tags, '\', \'')
+    $opt_exclude_tags = "  exclude_tags => ['${arr_exclude_tags}']\n"
+  }
+
+  if ($fields != '') {
     validate_array($fields)
     $arr_fields = join($fields, '\', \'')
     $opt_fields = "  fields => ['${arr_fields}']\n"
   }
 
-  if $embedded {
+  if ($embedded != '') {
     validate_bool($embedded)
     $opt_embedded = "  embedded => ${embedded}\n"
   }
 
-  if $port {
+  if ($port != '') {
     if ! is_numeric($port) {
       fail("\"${port}\" is not a valid port parameter value")
     } else {
@@ -199,7 +224,7 @@ define logstash::output::elasticsearch (
     }
   }
 
-  if $max_inflight_requests {
+  if ($max_inflight_requests != '') {
     if ! is_numeric($max_inflight_requests) {
       fail("\"${max_inflight_requests}\" is not a valid max_inflight_requests parameter value")
     } else {
@@ -207,60 +232,58 @@ define logstash::output::elasticsearch (
     }
   }
 
-  if $host {
-    validate_string($host)
-    $opt_host = "  host => \"${host}\"\n"
-  }
-
-  if $embedded_http_port {
-    validate_string($embedded_http_port)
-    $opt_embedded_http_port = "  embedded_http_port => \"${embedded_http_port}\"\n"
-  }
-
-  if $index {
+  if ($index != '') {
     validate_string($index)
     $opt_index = "  index => \"${index}\"\n"
   }
 
-  if $index_type {
+  if ($host != '') {
+    validate_string($host)
+    $opt_host = "  host => \"${host}\"\n"
+  }
+
+  if ($index_type != '') {
     validate_string($index_type)
     $opt_index_type = "  index_type => \"${index_type}\"\n"
   }
 
-  if $bind_host {
-    validate_string($bind_host)
-    $opt_bind_host = "  bind_host => \"${bind_host}\"\n"
+  if ($embedded_http_port != '') {
+    validate_string($embedded_http_port)
+    $opt_embedded_http_port = "  embedded_http_port => \"${embedded_http_port}\"\n"
   }
 
-  if $node_name {
+  if ($node_name != '') {
     validate_string($node_name)
     $opt_node_name = "  node_name => \"${node_name}\"\n"
   }
 
-  if $document_id {
+  if ($document_id != '') {
     validate_string($document_id)
     $opt_document_id = "  document_id => \"${document_id}\"\n"
   }
 
-  if $cluster {
+  if ($cluster != '') {
     validate_string($cluster)
     $opt_cluster = "  cluster => \"${cluster}\"\n"
   }
 
-  if $type {
+  if ($type != '') {
     validate_string($type)
     $opt_type = "  type => \"${type}\"\n"
   }
 
+  if ($bind_host != '') {
+    validate_string($bind_host)
+    $opt_bind_host = "  bind_host => \"${bind_host}\"\n"
+  }
+
   #### Write config file
 
-  file { "${logstash::params::configdir}/output_elasticsearch_${name}":
+  file { $conffiles:
     ensure  => present,
     content => "output {\n elasticsearch {\n${opt_bind_host}${opt_cluster}${opt_document_id}${opt_embedded}${opt_embedded_http_port}${opt_exclude_tags}${opt_fields}${opt_host}${opt_index}${opt_index_type}${opt_max_inflight_requests}${opt_node_name}${opt_port}${opt_tags}${opt_type} }\n}\n",
-    owner   => 'root',
-    group   => 'root',
-    mode    => '0644',
-    notify  => Class['logstash::service'],
+    mode    => '0440',
+    notify  => Service[$services],
     require => Class['logstash::package', 'logstash::config']
   }
 }

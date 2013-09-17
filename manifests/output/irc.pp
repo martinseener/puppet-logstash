@@ -6,7 +6,8 @@
 # === Parameters
 #
 # [*channels*]
-#   Channels to broadcast to
+#   Channels to broadcast to.  These should be full channel names
+#   including the '#' symbol, such as "#logstash".
 #   Value type is array
 #   Default value: None
 #   This variable is required
@@ -60,6 +61,12 @@
 #   Default value: "logstash"
 #   This variable is optional
 #
+# [*secure*]
+#   Set this to true to enable SSL.
+#   Value type is boolean
+#   Default value: false
+#   This variable is optional
+#
 # [*tags*]
 #   Only handle events with all of these tags.  Note that if you specify a
 #   type, the event must also match that type. Optional.
@@ -81,20 +88,19 @@
 #   Default value: "logstash"
 #   This variable is optional
 #
-#
-#
-# === Examples
-#
-#
-#
+# [*instances*]
+#   Array of instance names to which this define is.
+#   Value type is array
+#   Default value: [ 'array' ]
+#   This variable is optional
 #
 # === Extra information
 #
-#  This define is created based on LogStash version 1.1.9
+#  This define is created based on LogStash version 1.1.12
 #  Extra information about this output can be found at:
-#  http://logstash.net/docs/1.1.9/outputs/irc
+#  http://logstash.net/docs/1.1.12/outputs/irc
 #
-#  Need help? http://logstash.net/docs/1.1.9/learn
+#  Need help? http://logstash.net/docs/1.1.12/learn
 #
 # === Authors
 #
@@ -102,48 +108,77 @@
 #
 define logstash::output::irc (
   $channels,
-  $port,
   $host,
-  $password     = '',
+  $port,
+  $format       = '',
   $fields       = '',
   $nick         = '',
-  $format       = '',
+  $password     = '',
   $exclude_tags = '',
   $real         = '',
+  $secure       = '',
   $tags         = '',
   $type         = '',
-  $user         = ''
+  $user         = '',
+  $instances    = [ 'agent' ]
 ) {
-
 
   require logstash::params
 
+  File {
+    owner => $logstash::logstash_user,
+    group => $logstash::logstash_group
+  }
+
+  if $logstash::multi_instance == true {
+
+    $confdirstart = prefix($instances, "${logstash::configdir}/")
+    $conffiles    = suffix($confdirstart, "/config/output_irc_${name}")
+    $services     = prefix($instances, 'logstash-')
+    $filesdir     = "${logstash::configdir}/files/output/irc/${name}"
+
+  } else {
+
+    $conffiles = "${logstash::configdir}/conf.d/output_irc_${name}"
+    $services  = 'logstash'
+    $filesdir  = "${logstash::configdir}/files/output/irc/${name}"
+
+  }
+
   #### Validate parameters
-  if $channels {
+  if ($channels != '') {
     validate_array($channels)
     $arr_channels = join($channels, '\', \'')
     $opt_channels = "  channels => ['${arr_channels}']\n"
   }
 
-  if $exclude_tags {
+  if ($exclude_tags != '') {
     validate_array($exclude_tags)
     $arr_exclude_tags = join($exclude_tags, '\', \'')
     $opt_exclude_tags = "  exclude_tags => ['${arr_exclude_tags}']\n"
   }
 
-  if $tags {
-    validate_array($tags)
-    $arr_tags = join($tags, '\', \'')
-    $opt_tags = "  tags => ['${arr_tags}']\n"
-  }
-
-  if $fields {
+  if ($fields != '') {
     validate_array($fields)
     $arr_fields = join($fields, '\', \'')
     $opt_fields = "  fields => ['${arr_fields}']\n"
   }
 
-  if $port {
+  if ($tags != '') {
+    validate_array($tags)
+    $arr_tags = join($tags, '\', \'')
+    $opt_tags = "  tags => ['${arr_tags}']\n"
+  }
+
+
+  validate_array($instances)
+
+  if ($secure != '') {
+    validate_bool($secure)
+    $opt_secure = "  secure => ${secure}\n"
+  }
+
+  if ($port != '') {
     if ! is_numeric($port) {
       fail("\"${port}\" is not a valid port parameter value")
     } else {
@@ -151,50 +186,48 @@ define logstash::output::irc (
     }
   }
 
-  if $password {
+  if ($password != '') {
     validate_string($password)
     $opt_password = "  password => \"${password}\"\n"
   }
 
-  if $nick {
-    validate_string($nick)
-    $opt_nick = "  nick => \"${nick}\"\n"
-  }
-
-  if $host {
-    validate_string($host)
-    $opt_host = "  host => \"${host}\"\n"
-  }
-
-  if $real {
-    validate_string($real)
-    $opt_real = "  real => \"${real}\"\n"
-  }
-
-  if $format {
+  if ($format != '') {
     validate_string($format)
     $opt_format = "  format => \"${format}\"\n"
   }
 
-  if $type {
+  if ($host != '') {
+    validate_string($host)
+    $opt_host = "  host => \"${host}\"\n"
+  }
+
+  if ($real != '') {
+    validate_string($real)
+    $opt_real = "  real => \"${real}\"\n"
+  }
+
+  if ($type != '') {
     validate_string($type)
     $opt_type = "  type => \"${type}\"\n"
   }
 
-  if $user {
+  if ($user != '') {
     validate_string($user)
     $opt_user = "  user => \"${user}\"\n"
   }
 
+  if ($nick != '') {
+    validate_string($nick)
+    $opt_nick = "  nick => \"${nick}\"\n"
+  }
+
   #### Write config file
 
-  file { "${logstash::params::configdir}/output_irc_${name}":
+  file { $conffiles:
     ensure  => present,
-    content => "output {\n irc {\n${opt_channels}${opt_exclude_tags}${opt_fields}${opt_format}${opt_host}${opt_nick}${opt_password}${opt_port}${opt_real}${opt_tags}${opt_type}${opt_user} }\n}\n",
-    owner   => 'root',
-    group   => 'root',
-    mode    => '0644',
-    notify  => Class['logstash::service'],
+    content => "output {\n irc {\n${opt_channels}${opt_exclude_tags}${opt_fields}${opt_format}${opt_host}${opt_nick}${opt_password}${opt_port}${opt_real}${opt_secure}${opt_tags}${opt_type}${opt_user} }\n}\n",
+    mode    => '0440',
+    notify  => Service[$services],
     require => Class['logstash::package', 'logstash::config']
   }
 }

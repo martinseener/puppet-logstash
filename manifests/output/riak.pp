@@ -104,20 +104,19 @@
 #   Default value: ""
 #   This variable is optional
 #
-#
-#
-# === Examples
-#
-#
-#
+# [*instances*]
+#   Array of instance names to which this define is.
+#   Value type is array
+#   Default value: [ 'array' ]
+#   This variable is optional
 #
 # === Extra information
 #
-#  This define is created based on LogStash version 1.1.9
+#  This define is created based on LogStash version 1.1.12
 #  Extra information about this output can be found at:
-#  http://logstash.net/docs/1.1.9/outputs/riak
+#  http://logstash.net/docs/1.1.12/outputs/riak
 #
-#  Need help? http://logstash.net/docs/1.1.9/learn
+#  Need help? http://logstash.net/docs/1.1.12/learn
 #
 # === Authors
 #
@@ -136,72 +135,98 @@ define logstash::output::riak (
   $proto         = '',
   $ssl_opts      = '',
   $tags          = '',
-  $type          = ''
+  $type          = '',
+  $instances     = [ 'agent' ]
 ) {
-
 
   require logstash::params
 
+  File {
+    owner => $logstash::logstash_user,
+    group => $logstash::logstash_group
+  }
+
+  if $logstash::multi_instance == true {
+
+    $confdirstart = prefix($instances, "${logstash::configdir}/")
+    $conffiles    = suffix($confdirstart, "/config/output_riak_${name}")
+    $services     = prefix($instances, 'logstash-')
+    $filesdir     = "${logstash::configdir}/files/output/riak/${name}"
+
+  } else {
+
+    $conffiles = "${logstash::configdir}/conf.d/output_riak_${name}"
+    $services  = 'logstash'
+    $filesdir  = "${logstash::configdir}/files/output/riak/${name}"
+
+  }
+
   #### Validate parameters
-  if $bucket {
+  if ($bucket != '') {
     validate_array($bucket)
     $arr_bucket = join($bucket, '\', \'')
     $opt_bucket = "  bucket => ['${arr_bucket}']\n"
   }
 
-  if $tags {
+  if ($tags != '') {
     validate_array($tags)
     $arr_tags = join($tags, '\', \'')
     $opt_tags = "  tags => ['${arr_tags}']\n"
   }
 
-  if $exclude_tags {
-    validate_array($exclude_tags)
-    $arr_exclude_tags = join($exclude_tags, '\', \'')
-    $opt_exclude_tags = "  exclude_tags => ['${arr_exclude_tags}']\n"
-  }
-
-  if $fields {
+  if ($fields != '') {
     validate_array($fields)
     $arr_fields = join($fields, '\', \'')
     $opt_fields = "  fields => ['${arr_fields}']\n"
   }
 
-  if $indices {
+  if ($indices != '') {
     validate_array($indices)
     $arr_indices = join($indices, '\', \'')
     $opt_indices = "  indices => ['${arr_indices}']\n"
   }
 
-  if $enable_ssl {
+  if ($exclude_tags != '') {
+    validate_array($exclude_tags)
+    $arr_exclude_tags = join($exclude_tags, '\', \'')
+    $opt_exclude_tags = "  exclude_tags => ['${arr_exclude_tags}']\n"
+  }
+
+
+  validate_array($instances)
+
+  if ($enable_ssl != '') {
     validate_bool($enable_ssl)
     $opt_enable_ssl = "  enable_ssl => ${enable_ssl}\n"
   }
 
-  if $enable_search {
+  if ($enable_search != '') {
     validate_bool($enable_search)
     $opt_enable_search = "  enable_search => ${enable_search}\n"
   }
 
-  if $bucket_props {
-    validate_hash($bucket_props)
-    $arr_bucket_props = inline_template('<%= bucket_props.to_a.flatten.inspect %>')
-    $opt_bucket_props = "  bucket_props => ${arr_bucket_props}\n"
-  }
-
-  if $nodes {
+  if ($nodes != '') {
     validate_hash($nodes)
-    $arr_nodes = inline_template('<%= nodes.to_a.flatten.inspect %>')
+    $var_nodes = $nodes
+    $arr_nodes = inline_template('<%= "["+var_nodes.sort.collect { |k,v| "\"#{k}\", \"#{v}\"" }.join(", ")+"]" %>')
     $opt_nodes = "  nodes => ${arr_nodes}\n"
   }
 
-  if $ssl_opts {
+  if ($bucket_props != '') {
+    validate_hash($bucket_props)
+    $var_bucket_props = $bucket_props
+    $arr_bucket_props = inline_template('<%= "["+var_bucket_props.sort.collect { |k,v| "\"#{k}\", \"#{v}\"" }.join(", ")+"]" %>')
+    $opt_bucket_props = "  bucket_props => ${arr_bucket_props}\n"
+  }
+
+  if ($ssl_opts != '') {
     validate_hash($ssl_opts)
-    $arr_ssl_opts = inline_template('<%= ssl_opts.to_a.flatten.inspect %>')
+    $var_ssl_opts = $ssl_opts
+    $arr_ssl_opts = inline_template('<%= "["+var_ssl_opts.sort.collect { |k,v| "\"#{k}\", \"#{v}\"" }.join(", ")+"]" %>')
     $opt_ssl_opts = "  ssl_opts => ${arr_ssl_opts}\n"
   }
 
-  if $proto {
+  if ($proto != '') {
     if ! ($proto in ['http', 'pb']) {
       fail("\"${proto}\" is not a valid proto parameter value")
     } else {
@@ -209,25 +234,23 @@ define logstash::output::riak (
     }
   }
 
-  if $key_name {
-    validate_string($key_name)
-    $opt_key_name = "  key_name => \"${key_name}\"\n"
-  }
-
-  if $type {
+  if ($type != '') {
     validate_string($type)
     $opt_type = "  type => \"${type}\"\n"
   }
 
+  if ($key_name != '') {
+    validate_string($key_name)
+    $opt_key_name = "  key_name => \"${key_name}\"\n"
+  }
+
   #### Write config file
 
-  file { "${logstash::params::configdir}/output_riak_${name}":
+  file { $conffiles:
     ensure  => present,
     content => "output {\n riak {\n${opt_bucket}${opt_bucket_props}${opt_enable_search}${opt_enable_ssl}${opt_exclude_tags}${opt_fields}${opt_indices}${opt_key_name}${opt_nodes}${opt_proto}${opt_ssl_opts}${opt_tags}${opt_type} }\n}\n",
-    owner   => 'root',
-    group   => 'root',
-    mode    => '0644',
-    notify  => Class['logstash::service'],
+    mode    => '0440',
+    notify  => Service[$services],
     require => Class['logstash::package', 'logstash::config']
   }
 }

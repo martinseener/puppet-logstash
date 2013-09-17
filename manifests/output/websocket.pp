@@ -47,20 +47,19 @@
 #   Default value: ""
 #   This variable is optional
 #
-#
-#
-# === Examples
-#
-#
-#
+# [*instances*]
+#   Array of instance names to which this define is.
+#   Value type is array
+#   Default value: [ 'array' ]
+#   This variable is optional
 #
 # === Extra information
 #
-#  This define is created based on LogStash version 1.1.9
+#  This define is created based on LogStash version 1.1.12
 #  Extra information about this output can be found at:
-#  http://logstash.net/docs/1.1.9/outputs/websocket
+#  http://logstash.net/docs/1.1.12/outputs/websocket
 #
-#  Need help? http://logstash.net/docs/1.1.9/learn
+#  Need help? http://logstash.net/docs/1.1.12/learn
 #
 # === Authors
 #
@@ -72,32 +71,55 @@ define logstash::output::websocket (
   $host         = '',
   $port         = '',
   $tags         = '',
-  $type         = ''
+  $type         = '',
+  $instances    = [ 'agent' ]
 ) {
-
 
   require logstash::params
 
+  File {
+    owner => $logstash::logstash_user,
+    group => $logstash::logstash_group
+  }
+
+  if $logstash::multi_instance == true {
+
+    $confdirstart = prefix($instances, "${logstash::configdir}/")
+    $conffiles    = suffix($confdirstart, "/config/output_websocket_${name}")
+    $services     = prefix($instances, 'logstash-')
+    $filesdir     = "${logstash::configdir}/files/output/websocket/${name}"
+
+  } else {
+
+    $conffiles = "${logstash::configdir}/conf.d/output_websocket_${name}"
+    $services  = 'logstash'
+    $filesdir  = "${logstash::configdir}/files/output/websocket/${name}"
+
+  }
+
   #### Validate parameters
-  if $exclude_tags {
+  if ($exclude_tags != '') {
     validate_array($exclude_tags)
     $arr_exclude_tags = join($exclude_tags, '\', \'')
     $opt_exclude_tags = "  exclude_tags => ['${arr_exclude_tags}']\n"
   }
 
-  if $fields {
+  if ($fields != '') {
     validate_array($fields)
     $arr_fields = join($fields, '\', \'')
     $opt_fields = "  fields => ['${arr_fields}']\n"
   }
 
-  if $tags {
+  if ($tags != '') {
     validate_array($tags)
     $arr_tags = join($tags, '\', \'')
     $opt_tags = "  tags => ['${arr_tags}']\n"
   }
 
-  if $port {
+
+  validate_array($instances)
+
+  if ($port != '') {
     if ! is_numeric($port) {
       fail("\"${port}\" is not a valid port parameter value")
     } else {
@@ -105,25 +127,23 @@ define logstash::output::websocket (
     }
   }
 
-  if $host {
-    validate_string($host)
-    $opt_host = "  host => \"${host}\"\n"
-  }
-
-  if $type {
+  if ($type != '') {
     validate_string($type)
     $opt_type = "  type => \"${type}\"\n"
   }
 
+  if ($host != '') {
+    validate_string($host)
+    $opt_host = "  host => \"${host}\"\n"
+  }
+
   #### Write config file
 
-  file { "${logstash::params::configdir}/output_websocket_${name}":
+  file { $conffiles:
     ensure  => present,
     content => "output {\n websocket {\n${opt_exclude_tags}${opt_fields}${opt_host}${opt_port}${opt_tags}${opt_type} }\n}\n",
-    owner   => 'root',
-    group   => 'root',
-    mode    => '0644',
-    notify  => Class['logstash::service'],
+    mode    => '0440',
+    notify  => Service[$services],
     require => Class['logstash::package', 'logstash::config']
   }
 }

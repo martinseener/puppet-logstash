@@ -65,6 +65,17 @@
 #   Default value: []
 #   This variable is optional
 #
+# [*ignore_older_than*]
+#   Don't track events that have @timestamp older than some number of
+#   seconds.  This is useful if you want to only include events that are
+#   near real-time in your metrics.  Example, to only count events that
+#   are within 10 seconds of real-time, you would do this:  filter {
+#   metrics {     meter =&gt; [ "hits" ]     ignore_older_than =&gt; 10
+#   } }
+#   Value type is number
+#   Default value: 0
+#   This variable is optional
+#
 # [*meter*]
 #   syntax: meter =&gt; [ "name of metric", "name of metric" ]
 #   Value type is array
@@ -109,102 +120,134 @@
 #   Default value: 10
 #   This variable is optional
 #
-#
-# === Examples
-#
-#
-#
+# [*instances*]
+#   Array of instance names to which this define is.
+#   Value type is array
+#   Default value: [ 'array' ]
+#   This variable is optional
 #
 # === Extra information
 #
-#  This define is created based on LogStash version 1.1.9
+#  This define is created based on LogStash version 1.1.12
 #  Extra information about this filter can be found at:
-#  http://logstash.net/docs/1.1.9/filters/metrics
+#  http://logstash.net/docs/1.1.12/filters/metrics
 #
-#  Need help? http://logstash.net/docs/1.1.9/learn
+#  Need help? http://logstash.net/docs/1.1.12/learn
 #
 # === Authors
 #
 # * Richard Pijnenburg <mailto:richard@ispavailability.com>
 #
 define logstash::filter::metrics (
-  $add_field    = '',
-  $add_tag      = '',
-  $exclude_tags = '',
-  $meter        = '',
-  $remove_tag   = '',
-  $tags         = '',
-  $timer        = '',
-  $type         = '',
-  $order        = 10
+  $add_field         = '',
+  $add_tag           = '',
+  $exclude_tags      = '',
+  $ignore_older_than = '',
+  $meter             = '',
+  $remove_tag        = '',
+  $tags              = '',
+  $timer             = '',
+  $type              = '',
+  $order             = 10,
+  $instances         = [ 'agent' ]
 ) {
-
 
   require logstash::params
 
-  #### Validate parameters
-  if $remove_tag {
-    validate_array($remove_tag)
-    $arr_remove_tag = join($remove_tag, '\', \'')
-    $opt_remove_tag = "  remove_tag => ['${arr_remove_tag}']\n"
+  File {
+    owner => $logstash::logstash_user,
+    group => $logstash::logstash_group
   }
 
-  if $add_tag {
+  if $logstash::multi_instance == true {
+
+    $confdirstart = prefix($instances, "${logstash::configdir}/")
+    $conffiles    = suffix($confdirstart, "/config/filter_${order}_metrics_${name}")
+    $services     = prefix($instances, 'logstash-')
+    $filesdir     = "${logstash::configdir}/files/filter/metrics/${name}"
+
+  } else {
+
+    $conffiles = "${logstash::configdir}/conf.d/filter_${order}_metrics_${name}"
+    $services  = 'logstash'
+    $filesdir  = "${logstash::configdir}/files/filter/metrics/${name}"
+
+  }
+
+  #### Validate parameters
+
+  validate_array($instances)
+
+  if ($add_tag != '') {
     validate_array($add_tag)
     $arr_add_tag = join($add_tag, '\', \'')
     $opt_add_tag = "  add_tag => ['${arr_add_tag}']\n"
   }
 
-  if $exclude_tags {
+  if ($exclude_tags != '') {
     validate_array($exclude_tags)
     $arr_exclude_tags = join($exclude_tags, '\', \'')
     $opt_exclude_tags = "  exclude_tags => ['${arr_exclude_tags}']\n"
   }
 
-  if $meter {
-    validate_array($meter)
-    $arr_meter = join($meter, '\', \'')
-    $opt_meter = "  meter => ['${arr_meter}']\n"
-  }
-
-  if $tags {
+  if ($tags != '') {
     validate_array($tags)
     $arr_tags = join($tags, '\', \'')
     $opt_tags = "  tags => ['${arr_tags}']\n"
   }
 
-  if $add_field {
+  if ($meter != '') {
+    validate_array($meter)
+    $arr_meter = join($meter, '\', \'')
+    $opt_meter = "  meter => ['${arr_meter}']\n"
+  }
+
+  if ($remove_tag != '') {
+    validate_array($remove_tag)
+    $arr_remove_tag = join($remove_tag, '\', \'')
+    $opt_remove_tag = "  remove_tag => ['${arr_remove_tag}']\n"
+  }
+
+  if ($add_field != '') {
     validate_hash($add_field)
-    $arr_add_field = inline_template('<%= add_field.to_a.flatten.inspect %>')
+    $var_add_field = $add_field
+    $arr_add_field = inline_template('<%= "["+var_add_field.sort.collect { |k,v| "\"#{k}\", \"#{v}\"" }.join(", ")+"]" %>')
     $opt_add_field = "  add_field => ${arr_add_field}\n"
   }
 
-  if $timer {
+  if ($timer != '') {
     validate_hash($timer)
-    $arr_timer = inline_template('<%= timer.to_a.flatten.inspect %>')
+    $var_timer = $timer
+    $arr_timer = inline_template('<%= "["+var_timer.sort.collect { |k,v| "\"#{k}\", \"#{v}\"" }.join(", ")+"]" %>')
     $opt_timer = "  timer => ${arr_timer}\n"
   }
 
-  if $order {
+  if ($order != '') {
     if ! is_numeric($order) {
       fail("\"${order}\" is not a valid order parameter value")
     }
   }
 
-  if $type {
+  if ($ignore_older_than != '') {
+    if ! is_numeric($ignore_older_than) {
+      fail("\"${ignore_older_than}\" is not a valid ignore_older_than parameter value")
+    } else {
+      $opt_ignore_older_than = "  ignore_older_than => ${ignore_older_than}\n"
+    }
+  }
+
+  if ($type != '') {
     validate_string($type)
     $opt_type = "  type => \"${type}\"\n"
   }
 
   #### Write config file
 
-  file { "${logstash::params::configdir}/filter_${order}_metrics_${name}":
+  file { $conffiles:
     ensure  => present,
-    content => "filter {\n metrics {\n${opt_add_field}${opt_add_tag}${opt_exclude_tags}${opt_meter}${opt_remove_tag}${opt_tags}${opt_timer}${opt_type} }\n}\n",
-    owner   => 'root',
-    group   => 'root',
-    mode    => '0644',
-    notify  => Class['logstash::service'],
+    content => "filter {\n metrics {\n${opt_add_field}${opt_add_tag}${opt_exclude_tags}${opt_ignore_older_than}${opt_meter}${opt_remove_tag}${opt_tags}${opt_timer}${opt_type} }\n}\n",
+    mode    => '0440',
+    notify  => Service[$services],
     require => Class['logstash::package', 'logstash::config']
   }
 }

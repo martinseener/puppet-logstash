@@ -1,3 +1,38 @@
+0.3.3 ( Jun 15, 2013 )
+  Enable puppet 3.2.x testing
+  Fix issue that the config dir was missing in the init files
+  Fix variable access deprecation warning ( PR #56 by Richard Peng )
+
+0.3.2 ( May 23, 2013 )
+  Fixing issue when using jar file without multi-instance feature
+  Added rspec tests to cover this issue
+
+0.3.1 ( May 15, 2013 )
+  Missed changes for enabling/disabling multi-instance feature
+  Adding a few spec tests for the multi-instance feature
+
+0.3.0 ( May 09, 2013 )
+  Update defines for Logstash 1.1.12
+  Adding license file
+  Deleted old init file removal to avoid issues. ( Issue #50 ) 
+  Allow file owner/group to be variable ( Issue/PR #47 )
+  Ensure log directory exists before starting ( PR #53 by Brian Lalor )
+  Provide complete containment of the class ( PR #53 by Brian Lalor )
+  Update rspec tests for new defines
+
+0.2.0 ( Apr 30, 2013 )
+  Update defines for logstash 1.1.10
+  New feature for plugins to automatically transfer files ( Issue #24 )
+  Create correct tmp dir ( Issue #35 )
+  Change file modes to be more secure ( Issue #36 )
+  Update defines for better input validation ( Issue #43 )
+  Adding rspec tests for plugin defines
+  Fix tmp dir Debian init script ( PR #44 by Dan Carley )
+
+0.1.0 ( Mar 25, 2013 )
+  Don't backup the Jar file or the symlink ( Issue #25 by Garth Kidd )
+  First implementation of the multi-instance feature. This will break certain functionality.
+
 0.0.6 ( Mar 07, 2013 )
   Fix issue that the init file was overwritten
   Ensure we install java first before starting logstash if enabled

@@ -13,10 +13,19 @@
 #   Default value: None
 #   This variable is required
 #
+# [*auto*]
+#   Auto If set to true, logstash will try to pull boundary fields out of
+#   the event. Any field explicitly set by config options will override
+#   these. ['type', 'subtype', 'creationtime', 'endtime', 'links', 'tags',
+#   'loc']
+#   Value type is boolean
+#   Default value: false
+#   This variable is optional
+#
 # [*bsubtype*]
 #   Sub-Type
 #   Value type is string
-#   Default value: "%{@type}"
+#   Default value: None
 #   This variable is optional
 #
 # [*btags*]
@@ -29,7 +38,7 @@
 # [*btype*]
 #   Type
 #   Value type is string
-#   Default value: "%{@message}"
+#   Default value: None
 #   This variable is optional
 #
 # [*end_time*]
@@ -83,20 +92,19 @@
 #   Default value: ""
 #   This variable is optional
 #
-#
-#
-# === Examples
-#
-#
-#
+# [*instances*]
+#   Array of instance names to which this define is.
+#   Value type is array
+#   Default value: [ 'array' ]
+#   This variable is optional
 #
 # === Extra information
 #
-#  This define is created based on LogStash version 1.1.9
+#  This define is created based on LogStash version 1.1.12
 #  Extra information about this output can be found at:
-#  http://logstash.net/docs/1.1.9/outputs/boundary
+#  http://logstash.net/docs/1.1.12/outputs/boundary
 #
-#  Need help? http://logstash.net/docs/1.1.9/learn
+#  Need help? http://logstash.net/docs/1.1.12/learn
 #
 # === Authors
 #
@@ -106,88 +114,115 @@ define logstash::output::boundary (
   $api_key,
   $org_id,
   $exclude_tags = '',
+  $btags        = '',
   $btype        = '',
   $end_time     = '',
-  $btags        = '',
-  $fields       = '',
   $bsubtype     = '',
+  $fields       = '',
+  $auto         = '',
   $start_time   = '',
   $tags         = '',
-  $type         = ''
+  $type         = '',
+  $instances    = [ 'agent' ]
 ) {
-
 
   require logstash::params
 
-  #### Validate parameters
-  if $exclude_tags {
-    validate_array($exclude_tags)
-    $arr_exclude_tags = join($exclude_tags, '\', \'')
-    $opt_exclude_tags = "  exclude_tags => ['${arr_exclude_tags}']\n"
+  File {
+    owner => $logstash::logstash_user,
+    group => $logstash::logstash_group
   }
 
-  if $tags {
+  if $logstash::multi_instance == true {
+
+    $confdirstart = prefix($instances, "${logstash::configdir}/")
+    $conffiles    = suffix($confdirstart, "/config/output_boundary_${name}")
+    $services     = prefix($instances, 'logstash-')
+    $filesdir     = "${logstash::configdir}/files/output/boundary/${name}"
+
+  } else {
+
+    $conffiles = "${logstash::configdir}/conf.d/output_boundary_${name}"
+    $services  = 'logstash'
+    $filesdir  = "${logstash::configdir}/files/output/boundary/${name}"
+
+  }
+
+  #### Validate parameters
+
+  validate_array($instances)
+
+  if ($tags != '') {
     validate_array($tags)
     $arr_tags = join($tags, '\', \'')
     $opt_tags = "  tags => ['${arr_tags}']\n"
   }
 
-  if $btags {
-    validate_array($btags)
-    $arr_btags = join($btags, '\', \'')
-    $opt_btags = "  btags => ['${arr_btags}']\n"
-  }
-
-  if $fields {
+  if ($fields != '') {
     validate_array($fields)
     $arr_fields = join($fields, '\', \'')
     $opt_fields = "  fields => ['${arr_fields}']\n"
   }
 
-  if $api_key {
-    validate_string($api_key)
-    $opt_api_key = "  api_key => \"${api_key}\"\n"
+  if ($btags != '') {
+    validate_array($btags)
+    $arr_btags = join($btags, '\', \'')
+    $opt_btags = "  btags => ['${arr_btags}']\n"
   }
 
-  if $end_time {
-    validate_string($end_time)
-    $opt_end_time = "  end_time => \"${end_time}\"\n"
+  if ($exclude_tags != '') {
+    validate_array($exclude_tags)
+    $arr_exclude_tags = join($exclude_tags, '\', \'')
+    $opt_exclude_tags = "  exclude_tags => ['${arr_exclude_tags}']\n"
   }
 
-  if $btype {
-    validate_string($btype)
-    $opt_btype = "  btype => \"${btype}\"\n"
+  if ($auto != '') {
+    validate_bool($auto)
+    $opt_auto = "  auto => ${auto}\n"
   }
 
-  if $org_id {
-    validate_string($org_id)
-    $opt_org_id = "  org_id => \"${org_id}\"\n"
-  }
-
-  if $start_time {
+  if ($start_time != '') {
     validate_string($start_time)
     $opt_start_time = "  start_time => \"${start_time}\"\n"
   }
 
-  if $bsubtype {
+  if ($bsubtype != '') {
     validate_string($bsubtype)
     $opt_bsubtype = "  bsubtype => \"${bsubtype}\"\n"
   }
 
-  if $type {
+  if ($org_id != '') {
+    validate_string($org_id)
+    $opt_org_id = "  org_id => \"${org_id}\"\n"
+  }
+
+  if ($btype != '') {
+    validate_string($btype)
+    $opt_btype = "  btype => \"${btype}\"\n"
+  }
+
+  if ($end_time != '') {
+    validate_string($end_time)
+    $opt_end_time = "  end_time => \"${end_time}\"\n"
+  }
+
+  if ($type != '') {
     validate_string($type)
     $opt_type = "  type => \"${type}\"\n"
   }
 
+  if ($api_key != '') {
+    validate_string($api_key)
+    $opt_api_key = "  api_key => \"${api_key}\"\n"
+  }
+
   #### Write config file
 
-  file { "${logstash::params::configdir}/output_boundary_${name}":
+  file { $conffiles:
     ensure  => present,
-    content => "output {\n boundary {\n${opt_api_key}${opt_bsubtype}${opt_btags}${opt_btype}${opt_end_time}${opt_exclude_tags}${opt_fields}${opt_org_id}${opt_start_time}${opt_tags}${opt_type} }\n}\n",
-    owner   => 'root',
-    group   => 'root',
-    mode    => '0644',
-    notify  => Class['logstash::service'],
+    content => "output {\n boundary {\n${opt_api_key}${opt_auto}${opt_bsubtype}${opt_btags}${opt_btype}${opt_end_time}${opt_exclude_tags}${opt_fields}${opt_org_id}${opt_start_time}${opt_tags}${opt_type} }\n}\n",
+    mode    => '0440',
+    notify  => Service[$services],
     require => Class['logstash::package', 'logstash::config']
   }
 }

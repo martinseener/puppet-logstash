@@ -63,24 +63,23 @@
 #   This variable is optional
 #
 # [*zabbix_sender*]
-#   Value type is string
+#   Value type is path
 #   Default value: "/usr/local/bin/zabbix_sender"
 #   This variable is optional
 #
-#
-#
-# === Examples
-#
-#
-#
+# [*instances*]
+#   Array of instance names to which this define is.
+#   Value type is array
+#   Default value: [ 'array' ]
+#   This variable is optional
 #
 # === Extra information
 #
-#  This define is created based on LogStash version 1.1.9
+#  This define is created based on LogStash version 1.1.12
 #  Extra information about this output can be found at:
-#  http://logstash.net/docs/1.1.9/outputs/zabbix
+#  http://logstash.net/docs/1.1.12/outputs/zabbix
 #
-#  Need help? http://logstash.net/docs/1.1.9/learn
+#  Need help? http://logstash.net/docs/1.1.12/learn
 #
 # === Authors
 #
@@ -93,32 +92,55 @@ define logstash::output::zabbix (
   $port          = '',
   $tags          = '',
   $type          = '',
-  $zabbix_sender = ''
+  $zabbix_sender = '',
+  $instances     = [ 'agent' ]
 ) {
-
 
   require logstash::params
 
+  File {
+    owner => $logstash::logstash_user,
+    group => $logstash::logstash_group
+  }
+
+  if $logstash::multi_instance == true {
+
+    $confdirstart = prefix($instances, "${logstash::configdir}/")
+    $conffiles    = suffix($confdirstart, "/config/output_zabbix_${name}")
+    $services     = prefix($instances, 'logstash-')
+    $filesdir     = "${logstash::configdir}/files/output/zabbix/${name}"
+
+  } else {
+
+    $conffiles = "${logstash::configdir}/conf.d/output_zabbix_${name}"
+    $services  = 'logstash'
+    $filesdir  = "${logstash::configdir}/files/output/zabbix/${name}"
+
+  }
+
   #### Validate parameters
-  if $exclude_tags {
+  if ($exclude_tags != '') {
     validate_array($exclude_tags)
     $arr_exclude_tags = join($exclude_tags, '\', \'')
     $opt_exclude_tags = "  exclude_tags => ['${arr_exclude_tags}']\n"
   }
 
-  if $fields {
+  if ($fields != '') {
     validate_array($fields)
     $arr_fields = join($fields, '\', \'')
     $opt_fields = "  fields => ['${arr_fields}']\n"
   }
 
-  if $tags {
+
+  validate_array($instances)
+
+  if ($tags != '') {
     validate_array($tags)
     $arr_tags = join($tags, '\', \'')
     $opt_tags = "  tags => ['${arr_tags}']\n"
   }
 
-  if $port {
+  if ($port != '') {
     if ! is_numeric($port) {
       fail("\"${port}\" is not a valid port parameter value")
     } else {
@@ -126,30 +148,62 @@ define logstash::output::zabbix (
     }
   }
 
-  if $host {
-    validate_string($host)
-    $opt_host = "  host => \"${host}\"\n"
+  if ($zabbix_sender != '') {
+    if $zabbix_sender =~ /^puppet\:\/\// {
+
+      validate_re($zabbix_sender, '\Apuppet:\/\/')
+
+      $filenameArray_zabbix_sender = split($zabbix_sender, '/')
+      $basefilename_zabbix_sender = $filenameArray_zabbix_sender[-1]
+
+      $opt_zabbix_sender = "  zabbix_sender => \"${filesdir}/${basefilename_zabbix_sender}\"\n"
+
+      file { "${filesdir}/${basefilename_zabbix_sender}":
+        source  => $zabbix_sender,
+        mode    => '0440',
+        require => File[$filesdir]
+      }
+    } else {
+      $opt_zabbix_sender = "  zabbix_sender => \"${zabbix_sender}\"\n"
+    }
   }
 
-  if $type {
+  if ($type != '') {
     validate_string($type)
     $opt_type = "  type => \"${type}\"\n"
   }
 
-  if $zabbix_sender {
-    validate_string($zabbix_sender)
-    $opt_zabbix_sender = "  zabbix_sender => \"${zabbix_sender}\"\n"
+  if ($host != '') {
+    validate_string($host)
+    $opt_host = "  host => \"${host}\"\n"
+  }
+
+
+  #### Create the directory where we place the files
+  exec { "create_files_dir_output_zabbix_${name}":
+    cwd     => '/',
+    path    => ['/usr/bin', '/bin'],
+    command => "mkdir -p ${filesdir}",
+    creates => $filesdir
+  }
+
+  #### Manage the files directory
+  file { $filesdir:
+    ensure  => directory,
+    mode    => '0640',
+    purge   => true,
+    recurse => true,
+    require => Exec["create_files_dir_output_zabbix_${name}"],
+    notify  => Service[$services]
   }
 
   #### Write config file
 
-  file { "${logstash::params::configdir}/output_zabbix_${name}":
+  file { $conffiles:
     ensure  => present,
     content => "output {\n zabbix {\n${opt_exclude_tags}${opt_fields}${opt_host}${opt_port}${opt_tags}${opt_type}${opt_zabbix_sender} }\n}\n",
-    owner   => 'root',
-    group   => 'root',
-    mode    => '0644',
-    notify  => Class['logstash::service'],
+    mode    => '0440',
+    notify  => Service[$services],
     require => Class['logstash::package', 'logstash::config']
   }
 }

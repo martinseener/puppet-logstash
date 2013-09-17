@@ -3,8 +3,6 @@
 # This class is able to install or remove logstash on a node.
 # It manages the status of the related service.
 #
-# [Add description - What does this module do on a node?] FIXME/TODO
-#
 #
 # === Parameters
 #
@@ -78,18 +76,27 @@
 # * Richard Pijnenburg <mailto:richard@ispavailability.com>
 #
 class logstash(
-  $ensure       = $logstash::params::ensure,
-  $autoupgrade  = $logstash::params::autoupgrade,
-  $status       = $logstash::params::status,
-  $version      = false,
-  $provider     = 'package',
-  $jarfile      = undef,
-  $initfile     = undef,
-  $defaultsfile = undef,
-  $installpath  = undef,
-  $java_install = false,
-  $java_package = undef
+  $ensure         = $logstash::params::ensure,
+  $autoupgrade    = $logstash::params::autoupgrade,
+  $status         = $logstash::params::status,
+  $version        = false,
+  $provider       = 'package',
+  $jarfile        = undef,
+  $purge_jars     = true,
+  $installpath    = $logstash::params::installpath,
+  $java_install   = false,
+  $java_package   = undef,
+  $instances      = [ 'agent' ],
+  $multi_instance = true,
+  $initfiles      = undef,
+  $defaultsfiles  = undef,
+  $logstash_user  = $logstash::params::logstash_user,
+  $logstash_group = $logstash::params::logstash_group,
+  $configdir      = $logstash::params::configdir,
 ) inherits logstash::params {
+
+  anchor {'logstash::begin': }
+  anchor {'logstash::end': }
 
   #### Validate parameters
 
@@ -99,14 +106,28 @@ class logstash(
   }
 
   # autoupgrade
-  validate_bool($autoupgrade)
+  validate_bool($autoupgrade, $purge_jars)
 
   # service status
   if ! ($status in [ 'enabled', 'disabled', 'running', 'unmanaged' ]) {
     fail("\"${status}\" is not a valid status parameter value")
   }
 
+  if $initfiles {
+    if $multi_instance == true {
+      validate_hash($initfiles)
+    } else {
+      validate_string($initfiles)
+    }
+  }
 
+  if $defaultsfiles {
+    if $multi_instance == true {
+      validate_hash($defaultsfiles)
+    } else {
+      validate_string($defaultsfiles)
+    }
+  }
 
   #### Manage actions
 
@@ -123,25 +144,32 @@ class logstash(
     # Install java
     class { 'logstash::java': }
 
-    # ensure we first java java and then manage the service
-    Class['logstash::java'] -> Class['logstash::service']
+    # ensure we first install java and then manage the service
+    Anchor['logstash::begin']
+    -> Class['logstash::java']
+    -> Class['logstash::service']
   }
-
 
   #### Manage relationships
 
   if $ensure == 'present' {
     # we need the software before configuring it
-    Class['logstash::package'] -> Class['logstash::config']
+    Anchor['logstash::begin']
+    -> Class['logstash::package']
+    -> Class['logstash::config']
 
     # we need the software and a working configuration before running a service
     Class['logstash::package'] -> Class['logstash::service']
     Class['logstash::config']  -> Class['logstash::service']
 
+    Class['logstash::service'] -> Anchor['logstash::end']
+
   } else {
 
     # make sure all services are getting stopped before software removal
-    Class['logstash::service'] -> Class['logstash::package']
+    Anchor['logstash::begin']
+    -> Class['logstash::service']
+    -> Class['logstash::package']
+    -> Anchor['logstash::end']
   }
-
 }

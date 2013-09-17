@@ -81,20 +81,19 @@
 #   Default value: ""
 #   This variable is optional
 #
-#
-#
-# === Examples
-#
-#
-#
+# [*instances*]
+#   Array of instance names to which this define is.
+#   Value type is array
+#   Default value: [ 'array' ]
+#   This variable is optional
 #
 # === Extra information
 #
-#  This define is created based on LogStash version 1.1.9
+#  This define is created based on LogStash version 1.1.12
 #  Extra information about this output can be found at:
-#  http://logstash.net/docs/1.1.9/outputs/juggernaut
+#  http://logstash.net/docs/1.1.12/outputs/juggernaut
 #
-#  Need help? http://logstash.net/docs/1.1.9/learn
+#  Need help? http://logstash.net/docs/1.1.12/learn
 #
 # === Authors
 #
@@ -102,55 +101,70 @@
 #
 define logstash::output::juggernaut (
   $channels,
-  $message_format = '',
+  $password       = '',
   $exclude_tags   = '',
   $fields         = '',
   $host           = '',
+  $message_format = '',
   $db             = '',
-  $password       = '',
   $port           = '',
   $tags           = '',
   $timeout        = '',
-  $type           = ''
+  $type           = '',
+  $instances      = [ 'agent' ]
 ) {
-
 
   require logstash::params
 
+  File {
+    owner => $logstash::logstash_user,
+    group => $logstash::logstash_group
+  }
+
+  if $logstash::multi_instance == true {
+
+    $confdirstart = prefix($instances, "${logstash::configdir}/")
+    $conffiles    = suffix($confdirstart, "/config/output_juggernaut_${name}")
+    $services     = prefix($instances, 'logstash-')
+    $filesdir     = "${logstash::configdir}/files/output/juggernaut/${name}"
+
+  } else {
+
+    $conffiles = "${logstash::configdir}/conf.d/output_juggernaut_${name}"
+    $services  = 'logstash'
+    $filesdir  = "${logstash::configdir}/files/output/juggernaut/${name}"
+
+  }
+
   #### Validate parameters
-  if $channels {
+  if ($channels != '') {
     validate_array($channels)
     $arr_channels = join($channels, '\', \'')
     $opt_channels = "  channels => ['${arr_channels}']\n"
   }
 
-  if $tags {
+  if ($tags != '') {
     validate_array($tags)
     $arr_tags = join($tags, '\', \'')
     $opt_tags = "  tags => ['${arr_tags}']\n"
   }
 
-  if $exclude_tags {
+  if ($exclude_tags != '') {
     validate_array($exclude_tags)
     $arr_exclude_tags = join($exclude_tags, '\', \'')
     $opt_exclude_tags = "  exclude_tags => ['${arr_exclude_tags}']\n"
   }
 
-  if $fields {
+  if ($fields != '') {
     validate_array($fields)
     $arr_fields = join($fields, '\', \'')
     $opt_fields = "  fields => ['${arr_fields}']\n"
   }
 
-  if $timeout {
-    if ! is_numeric($timeout) {
-      fail("\"${timeout}\" is not a valid timeout parameter value")
-    } else {
-      $opt_timeout = "  timeout => ${timeout}\n"
-    }
-  }
 
-  if $db {
+  validate_array($instances)
+
+  if ($db != '') {
     if ! is_numeric($db) {
       fail("\"${db}\" is not a valid db parameter value")
     } else {
@@ -158,7 +172,15 @@ define logstash::output::juggernaut (
     }
   }
 
-  if $port {
+  if ($timeout != '') {
+    if ! is_numeric($timeout) {
+      fail("\"${timeout}\" is not a valid timeout parameter value")
+    } else {
+      $opt_timeout = "  timeout => ${timeout}\n"
+    }
+  }
+
+  if ($port != '') {
     if ! is_numeric($port) {
       fail("\"${port}\" is not a valid port parameter value")
     } else {
@@ -166,35 +188,33 @@ define logstash::output::juggernaut (
     }
   }
 
-  if $password {
+  if ($password != '') {
     validate_string($password)
     $opt_password = "  password => \"${password}\"\n"
   }
 
-  if $message_format {
-    validate_string($message_format)
-    $opt_message_format = "  message_format => \"${message_format}\"\n"
-  }
-
-  if $host {
+  if ($host != '') {
     validate_string($host)
     $opt_host = "  host => \"${host}\"\n"
   }
 
-  if $type {
+  if ($type != '') {
     validate_string($type)
     $opt_type = "  type => \"${type}\"\n"
   }
 
+  if ($message_format != '') {
+    validate_string($message_format)
+    $opt_message_format = "  message_format => \"${message_format}\"\n"
+  }
+
   #### Write config file
 
-  file { "${logstash::params::configdir}/output_juggernaut_${name}":
+  file { $conffiles:
     ensure  => present,
     content => "output {\n juggernaut {\n${opt_channels}${opt_db}${opt_exclude_tags}${opt_fields}${opt_host}${opt_message_format}${opt_password}${opt_port}${opt_tags}${opt_timeout}${opt_type} }\n}\n",
-    owner   => 'root',
-    group   => 'root',
-    mode    => '0644',
-    notify  => Class['logstash::service'],
+    mode    => '0440',
+    notify  => Service[$services],
     require => Class['logstash::package', 'logstash::config']
   }
 }

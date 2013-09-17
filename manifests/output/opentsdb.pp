@@ -65,20 +65,19 @@
 #   Default value: ""
 #   This variable is optional
 #
-#
-#
-# === Examples
-#
-#
-#
+# [*instances*]
+#   Array of instance names to which this define is.
+#   Value type is array
+#   Default value: [ 'array' ]
+#   This variable is optional
 #
 # === Extra information
 #
-#  This define is created based on LogStash version 1.1.9
+#  This define is created based on LogStash version 1.1.12
 #  Extra information about this output can be found at:
-#  http://logstash.net/docs/1.1.9/outputs/opentsdb
+#  http://logstash.net/docs/1.1.12/outputs/opentsdb
 #
-#  Need help? http://logstash.net/docs/1.1.9/learn
+#  Need help? http://logstash.net/docs/1.1.12/learn
 #
 # === Authors
 #
@@ -92,43 +91,66 @@ define logstash::output::opentsdb (
   $exclude_tags = '',
   $port         = '',
   $tags         = '',
-  $type         = ''
+  $type         = '',
+  $instances    = [ 'agent' ]
 ) {
-
 
   require logstash::params
 
-  #### Validate parameters
-  if $metrics {
-    validate_array($metrics)
-    $arr_metrics = join($metrics, '\', \'')
-    $opt_metrics = "  metrics => ['${arr_metrics}']\n"
+  File {
+    owner => $logstash::logstash_user,
+    group => $logstash::logstash_group
   }
 
-  if $exclude_tags {
+  if $logstash::multi_instance == true {
+
+    $confdirstart = prefix($instances, "${logstash::configdir}/")
+    $conffiles    = suffix($confdirstart, "/config/output_opentsdb_${name}")
+    $services     = prefix($instances, 'logstash-')
+    $filesdir     = "${logstash::configdir}/files/output/opentsdb/${name}"
+
+  } else {
+
+    $conffiles = "${logstash::configdir}/conf.d/output_opentsdb_${name}"
+    $services  = 'logstash'
+    $filesdir  = "${logstash::configdir}/files/output/opentsdb/${name}"
+
+  }
+
+  #### Validate parameters
+
+  validate_array($instances)
+
+  if ($exclude_tags != '') {
     validate_array($exclude_tags)
     $arr_exclude_tags = join($exclude_tags, '\', \'')
     $opt_exclude_tags = "  exclude_tags => ['${arr_exclude_tags}']\n"
   }
 
-  if $fields {
+  if ($fields != '') {
     validate_array($fields)
     $arr_fields = join($fields, '\', \'')
     $opt_fields = "  fields => ['${arr_fields}']\n"
   }
 
-  if $tags {
+  if ($tags != '') {
     validate_array($tags)
     $arr_tags = join($tags, '\', \'')
     $opt_tags = "  tags => ['${arr_tags}']\n"
   }
 
-  if $debug {
+  if ($metrics != '') {
+    validate_array($metrics)
+    $arr_metrics = join($metrics, '\', \'')
+    $opt_metrics = "  metrics => ['${arr_metrics}']\n"
+  }
+
+  if ($debug != '') {
     validate_bool($debug)
     $opt_debug = "  debug => ${debug}\n"
   }
 
-  if $port {
+  if ($port != '') {
     if ! is_numeric($port) {
       fail("\"${port}\" is not a valid port parameter value")
     } else {
@@ -136,25 +158,23 @@ define logstash::output::opentsdb (
     }
   }
 
-  if $host {
+  if ($host != '') {
     validate_string($host)
     $opt_host = "  host => \"${host}\"\n"
   }
 
-  if $type {
+  if ($type != '') {
     validate_string($type)
     $opt_type = "  type => \"${type}\"\n"
   }
 
   #### Write config file
 
-  file { "${logstash::params::configdir}/output_opentsdb_${name}":
+  file { $conffiles:
     ensure  => present,
     content => "output {\n opentsdb {\n${opt_debug}${opt_exclude_tags}${opt_fields}${opt_host}${opt_metrics}${opt_port}${opt_tags}${opt_type} }\n}\n",
-    owner   => 'root',
-    group   => 'root',
-    mode    => '0644',
-    notify  => Class['logstash::service'],
+    mode    => '0440',
+    notify  => Service[$services],
     require => Class['logstash::package', 'logstash::config']
   }
 }

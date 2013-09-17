@@ -64,7 +64,7 @@
 #   The regular expression to match
 #   Value type is string
 #   Default value: None
-#   This variable is optional
+#   This variable is required
 #
 # [*patterns_dir*]
 #   logstash ships by default with a bunch of patterns, so you don't
@@ -122,7 +122,7 @@
 #   event?
 #   Value can be any of: "previous", "next"
 #   Default value: None
-#   This variable is optional
+#   This variable is required
 #
 # [*order*]
 #   The order variable decides in which sequence the filters are loaded.
@@ -130,91 +130,115 @@
 #   Default value: 10
 #   This variable is optional
 #
-#
-# === Examples
-#
-#
-#
+# [*instances*]
+#   Array of instance names to which this define is.
+#   Value type is array
+#   Default value: [ 'array' ]
+#   This variable is optional
 #
 # === Extra information
 #
-#  This define is created based on LogStash version 1.1.9
+#  This define is created based on LogStash version 1.1.12
 #  Extra information about this filter can be found at:
-#  http://logstash.net/docs/1.1.9/filters/multiline
+#  http://logstash.net/docs/1.1.12/filters/multiline
 #
-#  Need help? http://logstash.net/docs/1.1.9/learn
+#  Need help? http://logstash.net/docs/1.1.12/learn
 #
 # === Authors
 #
 # * Richard Pijnenburg <mailto:richard@ispavailability.com>
 #
 define logstash::filter::multiline (
-  $add_field       = '',
-  $add_tag         = '',
-  $exclude_tags    = '',
-  $negate          = '',
-  $pattern         = '',
-  $patterns_dir    = '',
+  $pattern,
+  $what,
   $remove_tag      = '',
+  $negate          = '',
+  $add_field       = '',
+  $patterns_dir    = '',
+  $exclude_tags    = '',
   $stream_identity = '',
   $tags            = '',
   $type            = '',
-  $what            = '',
-  $order           = 10
+  $add_tag         = '',
+  $order           = 10,
+  $instances       = [ 'agent' ]
 ) {
-
 
   require logstash::params
 
-  #### Validate parameters
-  if $remove_tag {
-    validate_array($remove_tag)
-    $arr_remove_tag = join($remove_tag, '\', \'')
-    $opt_remove_tag = "  remove_tag => ['${arr_remove_tag}']\n"
+  File {
+    owner => $logstash::logstash_user,
+    group => $logstash::logstash_group
   }
 
-  if $add_tag {
+  if $logstash::multi_instance == true {
+
+    $confdirstart = prefix($instances, "${logstash::configdir}/")
+    $conffiles    = suffix($confdirstart, "/config/filter_${order}_multiline_${name}")
+    $services     = prefix($instances, 'logstash-')
+    $filesdir     = "${logstash::configdir}/files/filter/multiline/${name}"
+
+  } else {
+
+    $conffiles = "${logstash::configdir}/conf.d/filter_${order}_multiline_${name}"
+    $services  = 'logstash'
+    $filesdir  = "${logstash::configdir}/files/filter/multiline/${name}"
+
+  }
+
+  #### Validate parameters
+
+  validate_array($instances)
+
+  if ($add_tag != '') {
     validate_array($add_tag)
     $arr_add_tag = join($add_tag, '\', \'')
     $opt_add_tag = "  add_tag => ['${arr_add_tag}']\n"
   }
 
-  if $exclude_tags {
+  if ($exclude_tags != '') {
     validate_array($exclude_tags)
     $arr_exclude_tags = join($exclude_tags, '\', \'')
     $opt_exclude_tags = "  exclude_tags => ['${arr_exclude_tags}']\n"
   }
 
-  if $tags {
+  if ($tags != '') {
     validate_array($tags)
     $arr_tags = join($tags, '\', \'')
     $opt_tags = "  tags => ['${arr_tags}']\n"
   }
 
-  if $patterns_dir {
+  if ($patterns_dir != '') {
     validate_array($patterns_dir)
     $arr_patterns_dir = join($patterns_dir, '\', \'')
     $opt_patterns_dir = "  patterns_dir => ['${arr_patterns_dir}']\n"
   }
 
-  if $negate {
+  if ($remove_tag != '') {
+    validate_array($remove_tag)
+    $arr_remove_tag = join($remove_tag, '\', \'')
+    $opt_remove_tag = "  remove_tag => ['${arr_remove_tag}']\n"
+  }
+
+  if ($negate != '') {
     validate_bool($negate)
     $opt_negate = "  negate => ${negate}\n"
   }
 
-  if $add_field {
+  if ($add_field != '') {
     validate_hash($add_field)
-    $arr_add_field = inline_template('<%= add_field.to_a.flatten.inspect %>')
+    $var_add_field = $add_field
+    $arr_add_field = inline_template('<%= "["+var_add_field.sort.collect { |k,v| "\"#{k}\", \"#{v}\"" }.join(", ")+"]" %>')
     $opt_add_field = "  add_field => ${arr_add_field}\n"
   }
 
-  if $order {
+  if ($order != '') {
     if ! is_numeric($order) {
       fail("\"${order}\" is not a valid order parameter value")
     }
   }
 
-  if $what {
+  if ($what != '') {
     if ! ($what in ['previous', 'next']) {
       fail("\"${what}\" is not a valid what parameter value")
     } else {
@@ -222,30 +246,28 @@ define logstash::filter::multiline (
     }
   }
 
-  if $type {
+  if ($type != '') {
     validate_string($type)
     $opt_type = "  type => \"${type}\"\n"
   }
 
-  if $pattern {
-    validate_string($pattern)
-    $opt_pattern = "  pattern => \"${pattern}\"\n"
-  }
-
-  if $stream_identity {
+  if ($stream_identity != '') {
     validate_string($stream_identity)
     $opt_stream_identity = "  stream_identity => \"${stream_identity}\"\n"
   }
 
+  if ($pattern != '') {
+    validate_string($pattern)
+    $opt_pattern = "  pattern => \"${pattern}\"\n"
+  }
+
   #### Write config file
 
-  file { "${logstash::params::configdir}/filter_${order}_multiline_${name}":
+  file { $conffiles:
     ensure  => present,
     content => "filter {\n multiline {\n${opt_add_field}${opt_add_tag}${opt_exclude_tags}${opt_negate}${opt_pattern}${opt_patterns_dir}${opt_remove_tag}${opt_stream_identity}${opt_tags}${opt_type}${opt_what} }\n}\n",
-    owner   => 'root',
-    group   => 'root',
-    mode    => '0644',
-    notify  => Class['logstash::service'],
+    mode    => '0440',
+    notify  => Service[$services],
     require => Class['logstash::package', 'logstash::config']
   }
 }

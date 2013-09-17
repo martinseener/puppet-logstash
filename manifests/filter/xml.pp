@@ -6,18 +6,6 @@
 #
 # === Parameters
 #
-# [*(?-mix:[A-Za-z0-9_-]+)*]
-#   Config for xml to hash is:  source_field =&gt; destination_field   XML
-#   in the value of the source field will be expanded into a datastructure
-#   in the "dest" field. Note: if the "dest" field already exists, it will
-#   be overridden.  For example, if you have the whole xml document in
-#   your @message field:  filter {   xml {     "@message" =&gt; "doc"   }
-#   }   The above would parse the xml from @message and store the
-#   resulting document into the 'doc' field.
-#   Value type is string
-#   Default value: None
-#   This variable is optional
-#
 # [*add_field*]
 #   If this filter is successful, add any arbitrary fields to this event.
 #   Example:  filter {   xml {     add_field =&gt; [ "sample", "Hello
@@ -56,6 +44,15 @@
 #   Default value: []
 #   This variable is optional
 #
+# [*source*]
+#   Config for xml to hash is:  source =&gt; source_field   For example,
+#   if you have the whole xml document in your @message field:  filter {
+#   xml {     source =&gt; "@message"   } }   The above would parse the
+#   xml from the @message field
+#   Value type is string
+#   Default value: None
+#   This variable is optional
+#
 # [*store_xml*]
 #   By default the filter will store the whole parsed xml in the
 #   destination field as described above. Setting this to false will
@@ -69,6 +66,16 @@
 #   type, the event must also match that type. Optional.
 #   Value type is array
 #   Default value: []
+#   This variable is optional
+#
+# [*target*]
+#   Define target for placing the data  for example if you want the data
+#   to be put in the 'doc' field:  filter {   xml {     target =&gt; "doc"
+#   } }   XML in the value of the source field will be expanded into a
+#   datastructure in the "target" field. Note: if the "target" field
+#   already exists, it will be overridden Required
+#   Value type is string
+#   Default value: None
 #   This variable is optional
 #
 # [*type*]
@@ -101,19 +108,19 @@
 #   Default value: 10
 #   This variable is optional
 #
-#
-# === Examples
-#
-#
-#
+# [*instances*]
+#   Array of instance names to which this define is.
+#   Value type is array
+#   Default value: [ 'array' ]
+#   This variable is optional
 #
 # === Extra information
 #
-#  This define is created based on LogStash version 1.1.9
+#  This define is created based on LogStash version 1.1.12
 #  Extra information about this filter can be found at:
-#  http://logstash.net/docs/1.1.9/filters/xml
+#  http://logstash.net/docs/1.1.12/filters/xml
 #
-#  Need help? http://logstash.net/docs/1.1.9/learn
+#  Need help? http://logstash.net/docs/1.1.12/learn
 #
 # === Authors
 #
@@ -124,78 +131,113 @@ define logstash::filter::xml (
   $add_tag      = '',
   $exclude_tags = '',
   $remove_tag   = '',
+  $source       = '',
   $store_xml    = '',
   $tags         = '',
+  $target       = '',
   $type         = '',
   $xpath        = '',
-  $order        = 10
+  $order        = 10,
+  $instances    = [ 'agent' ]
 ) {
-
 
   require logstash::params
 
+  File {
+    owner => $logstash::logstash_user,
+    group => $logstash::logstash_group
+  }
+
+  if $logstash::multi_instance == true {
+
+    $confdirstart = prefix($instances, "${logstash::configdir}/")
+    $conffiles    = suffix($confdirstart, "/config/filter_${order}_xml_${name}")
+    $services     = prefix($instances, 'logstash-')
+    $filesdir     = "${logstash::configdir}/files/filter/xml/${name}"
+
+  } else {
+
+    $conffiles = "${logstash::configdir}/conf.d/filter_${order}_xml_${name}"
+    $services  = 'logstash'
+    $filesdir  = "${logstash::configdir}/files/filter/xml/${name}"
+
+  }
+
   #### Validate parameters
-  if $tags {
+
+  validate_array($instances)
+
+  if ($tags != '') {
     validate_array($tags)
     $arr_tags = join($tags, '\', \'')
     $opt_tags = "  tags => ['${arr_tags}']\n"
   }
 
-  if $remove_tag {
-    validate_array($remove_tag)
-    $arr_remove_tag = join($remove_tag, '\', \'')
-    $opt_remove_tag = "  remove_tag => ['${arr_remove_tag}']\n"
-  }
-
-  if $add_tag {
+  if ($add_tag != '') {
     validate_array($add_tag)
     $arr_add_tag = join($add_tag, '\', \'')
     $opt_add_tag = "  add_tag => ['${arr_add_tag}']\n"
   }
 
-  if $exclude_tags {
+  if ($exclude_tags != '') {
     validate_array($exclude_tags)
     $arr_exclude_tags = join($exclude_tags, '\', \'')
     $opt_exclude_tags = "  exclude_tags => ['${arr_exclude_tags}']\n"
   }
 
-  if $store_xml {
+  if ($remove_tag != '') {
+    validate_array($remove_tag)
+    $arr_remove_tag = join($remove_tag, '\', \'')
+    $opt_remove_tag = "  remove_tag => ['${arr_remove_tag}']\n"
+  }
+
+  if ($store_xml != '') {
     validate_bool($store_xml)
     $opt_store_xml = "  store_xml => ${store_xml}\n"
   }
 
-  if $xpath {
-    validate_hash($xpath)
-    $arr_xpath = inline_template('<%= xpath.to_a.flatten.inspect %>')
-    $opt_xpath = "  xpath => ${arr_xpath}\n"
-  }
-
-  if $add_field {
+  if ($add_field != '') {
     validate_hash($add_field)
-    $arr_add_field = inline_template('<%= add_field.to_a.flatten.inspect %>')
+    $var_add_field = $add_field
+    $arr_add_field = inline_template('<%= "["+var_add_field.sort.collect { |k,v| "\"#{k}\", \"#{v}\"" }.join(", ")+"]" %>')
     $opt_add_field = "  add_field => ${arr_add_field}\n"
   }
 
-  if $order {
+  if ($xpath != '') {
+    validate_hash($xpath)
+    $var_xpath = $xpath
+    $arr_xpath = inline_template('<%= "["+var_xpath.sort.collect { |k,v| "\"#{k}\", \"#{v}\"" }.join(", ")+"]" %>')
+    $opt_xpath = "  xpath => ${arr_xpath}\n"
+  }
+
+  if ($order != '') {
     if ! is_numeric($order) {
       fail("\"${order}\" is not a valid order parameter value")
     }
   }
 
-  if $type {
+  if ($type != '') {
     validate_string($type)
     $opt_type = "  type => \"${type}\"\n"
   }
 
+  if ($target != '') {
+    validate_string($target)
+    $opt_target = "  target => \"${target}\"\n"
+  }
+
+  if ($source != '') {
+    validate_string($source)
+    $opt_source = "  source => \"${source}\"\n"
+  }
+
   #### Write config file
 
-  file { "${logstash::params::configdir}/filter_${order}_xml_${name}":
+  file { $conffiles:
     ensure  => present,
-    content => "filter {\n xml {\n${opt_add_field}${opt_add_tag}${opt_exclude_tags}${opt_remove_tag}${opt_store_xml}${opt_tags}${opt_type}${opt_xpath} }\n}\n",
-    owner   => 'root',
-    group   => 'root',
-    mode    => '0644',
-    notify  => Class['logstash::service'],
+    content => "filter {\n xml {\n${opt_add_field}${opt_add_tag}${opt_exclude_tags}${opt_remove_tag}${opt_source}${opt_store_xml}${opt_tags}${opt_target}${opt_type}${opt_xpath} }\n}\n",
+    mode    => '0440',
+    notify  => Service[$services],
     require => Class['logstash::package', 'logstash::config']
   }
 }

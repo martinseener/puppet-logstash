@@ -84,20 +84,19 @@
 #   Default value: ""
 #   This variable is optional
 #
-#
-#
-# === Examples
-#
-#
-#
+# [*instances*]
+#   Array of instance names to which this define is.
+#   Value type is array
+#   Default value: [ 'array' ]
+#   This variable is optional
 #
 # === Extra information
 #
-#  This define is created based on LogStash version 1.1.9
+#  This define is created based on LogStash version 1.1.12
 #  Extra information about this output can be found at:
-#  http://logstash.net/docs/1.1.9/outputs/datadog
+#  http://logstash.net/docs/1.1.12/outputs/datadog
 #
-#  Need help? http://logstash.net/docs/1.1.9/learn
+#  Need help? http://logstash.net/docs/1.1.12/learn
 #
 # === Authors
 #
@@ -115,54 +114,61 @@ define logstash::output::datadog (
   $tags             = '',
   $text             = '',
   $title            = '',
-  $type             = ''
+  $type             = '',
+  $instances        = [ 'agent' ]
 ) {
-
 
   require logstash::params
 
-  #### Validate parameters
-  if $fields {
-    validate_array($fields)
-    $arr_fields = join($fields, '\', \'')
-    $opt_fields = "  fields => ['${arr_fields}']\n"
+  File {
+    owner => $logstash::logstash_user,
+    group => $logstash::logstash_group
   }
 
-  if $tags {
+  if $logstash::multi_instance == true {
+
+    $confdirstart = prefix($instances, "${logstash::configdir}/")
+    $conffiles    = suffix($confdirstart, "/config/output_datadog_${name}")
+    $services     = prefix($instances, 'logstash-')
+    $filesdir     = "${logstash::configdir}/files/output/datadog/${name}"
+
+  } else {
+
+    $conffiles = "${logstash::configdir}/conf.d/output_datadog_${name}"
+    $services  = 'logstash'
+    $filesdir  = "${logstash::configdir}/files/output/datadog/${name}"
+
+  }
+
+  #### Validate parameters
+
+  validate_array($instances)
+
+  if ($tags != '') {
     validate_array($tags)
     $arr_tags = join($tags, '\', \'')
     $opt_tags = "  tags => ['${arr_tags}']\n"
   }
 
-  if $exclude_tags {
-    validate_array($exclude_tags)
-    $arr_exclude_tags = join($exclude_tags, '\', \'')
-    $opt_exclude_tags = "  exclude_tags => ['${arr_exclude_tags}']\n"
+  if ($fields != '') {
+    validate_array($fields)
+    $arr_fields = join($fields, '\', \'')
+    $opt_fields = "  fields => ['${arr_fields}']\n"
   }
 
-  if $dd_tags {
+  if ($dd_tags != '') {
     validate_array($dd_tags)
     $arr_dd_tags = join($dd_tags, '\', \'')
     $opt_dd_tags = "  dd_tags => ['${arr_dd_tags}']\n"
   }
 
-  if $source_type_name {
-    if ! ($source_type_name in ['nagios', 'hudson', 'jenkins', 'user', 'my apps', 'feed', 'chef', 'puppet', 'git', 'bitbucket']) {
-      fail("\"${source_type_name}\" is not a valid source_type_name parameter value")
-    } else {
-      $opt_source_type_name = "  source_type_name => \"${source_type_name}\"\n"
-    }
+  if ($exclude_tags != '') {
+    validate_array($exclude_tags)
+    $arr_exclude_tags = join($exclude_tags, '\', \'')
+    $opt_exclude_tags = "  exclude_tags => ['${arr_exclude_tags}']\n"
   }
 
-  if $alert_type {
-    if ! ($alert_type in ['info', 'error', 'warning', 'success']) {
-      fail("\"${alert_type}\" is not a valid alert_type parameter value")
-    } else {
-      $opt_alert_type = "  alert_type => \"${alert_type}\"\n"
-    }
-  }
-
-  if $priority {
+  if ($priority != '') {
     if ! ($priority in ['normal', 'low']) {
       fail("\"${priority}\" is not a valid priority parameter value")
     } else {
@@ -170,40 +176,54 @@ define logstash::output::datadog (
     }
   }
 
-  if $date_happened {
-    validate_string($date_happened)
-    $opt_date_happened = "  date_happened => \"${date_happened}\"\n"
+  if ($alert_type != '') {
+    if ! ($alert_type in ['info', 'error', 'warning', 'success']) {
+      fail("\"${alert_type}\" is not a valid alert_type parameter value")
+    } else {
+      $opt_alert_type = "  alert_type => \"${alert_type}\"\n"
+    }
   }
 
-  if $api_key {
-    validate_string($api_key)
-    $opt_api_key = "  api_key => \"${api_key}\"\n"
+  if ($source_type_name != '') {
+    if ! ($source_type_name in ['nagios', 'hudson', 'jenkins', 'user', 'my apps', 'feed', 'chef', 'puppet', 'git', 'bitbucket']) {
+      fail("\"${source_type_name}\" is not a valid source_type_name parameter value")
+    } else {
+      $opt_source_type_name = "  source_type_name => \"${source_type_name}\"\n"
+    }
   }
 
-  if $text {
+  if ($text != '') {
     validate_string($text)
     $opt_text = "  text => \"${text}\"\n"
   }
 
-  if $title {
+  if ($api_key != '') {
+    validate_string($api_key)
+    $opt_api_key = "  api_key => \"${api_key}\"\n"
+  }
+
+  if ($title != '') {
     validate_string($title)
     $opt_title = "  title => \"${title}\"\n"
   }
 
-  if $type {
+  if ($type != '') {
     validate_string($type)
     $opt_type = "  type => \"${type}\"\n"
   }
 
+  if ($date_happened != '') {
+    validate_string($date_happened)
+    $opt_date_happened = "  date_happened => \"${date_happened}\"\n"
+  }
+
   #### Write config file
 
-  file { "${logstash::params::configdir}/output_datadog_${name}":
+  file { $conffiles:
     ensure  => present,
     content => "output {\n datadog {\n${opt_alert_type}${opt_api_key}${opt_date_happened}${opt_dd_tags}${opt_exclude_tags}${opt_fields}${opt_priority}${opt_source_type_name}${opt_tags}${opt_text}${opt_title}${opt_type} }\n}\n",
-    owner   => 'root',
-    group   => 'root',
-    mode    => '0644',
-    notify  => Class['logstash::service'],
+    mode    => '0440',
+    notify  => Service[$services],
     require => Class['logstash::package', 'logstash::config']
   }
 }

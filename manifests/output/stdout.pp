@@ -50,20 +50,19 @@
 #   Default value: ""
 #   This variable is optional
 #
-#
-#
-# === Examples
-#
-#
-#
+# [*instances*]
+#   Array of instance names to which this define is.
+#   Value type is array
+#   Default value: [ 'array' ]
+#   This variable is optional
 #
 # === Extra information
 #
-#  This define is created based on LogStash version 1.1.9
+#  This define is created based on LogStash version 1.1.12
 #  Extra information about this output can be found at:
-#  http://logstash.net/docs/1.1.9/outputs/stdout
+#  http://logstash.net/docs/1.1.12/outputs/stdout
 #
-#  Need help? http://logstash.net/docs/1.1.9/learn
+#  Need help? http://logstash.net/docs/1.1.12/learn
 #
 # === Authors
 #
@@ -76,37 +75,60 @@ define logstash::output::stdout (
   $fields       = '',
   $message      = '',
   $tags         = '',
-  $type         = ''
+  $type         = '',
+  $instances    = [ 'agent' ]
 ) {
-
 
   require logstash::params
 
-  #### Validate parameters
-  if $fields {
-    validate_array($fields)
-    $arr_fields = join($fields, '\', \'')
-    $opt_fields = "  fields => ['${arr_fields}']\n"
+  File {
+    owner => $logstash::logstash_user,
+    group => $logstash::logstash_group
   }
 
-  if $tags {
+  if $logstash::multi_instance == true {
+
+    $confdirstart = prefix($instances, "${logstash::configdir}/")
+    $conffiles    = suffix($confdirstart, "/config/output_stdout_${name}")
+    $services     = prefix($instances, 'logstash-')
+    $filesdir     = "${logstash::configdir}/files/output/stdout/${name}"
+
+  } else {
+
+    $conffiles = "${logstash::configdir}/conf.d/output_stdout_${name}"
+    $services  = 'logstash'
+    $filesdir  = "${logstash::configdir}/files/output/stdout/${name}"
+
+  }
+
+  #### Validate parameters
+
+  validate_array($instances)
+
+  if ($tags != '') {
     validate_array($tags)
     $arr_tags = join($tags, '\', \'')
     $opt_tags = "  tags => ['${arr_tags}']\n"
   }
 
-  if $exclude_tags {
+  if ($exclude_tags != '') {
     validate_array($exclude_tags)
     $arr_exclude_tags = join($exclude_tags, '\', \'')
     $opt_exclude_tags = "  exclude_tags => ['${arr_exclude_tags}']\n"
   }
 
-  if $debug {
+  if ($fields != '') {
+    validate_array($fields)
+    $arr_fields = join($fields, '\', \'')
+    $opt_fields = "  fields => ['${arr_fields}']\n"
+  }
+
+  if ($debug != '') {
     validate_bool($debug)
     $opt_debug = "  debug => ${debug}\n"
   }
 
-  if $debug_format {
+  if ($debug_format != '') {
     if ! ($debug_format in ['ruby', 'json', 'dots']) {
       fail("\"${debug_format}\" is not a valid debug_format parameter value")
     } else {
@@ -114,25 +136,23 @@ define logstash::output::stdout (
     }
   }
 
-  if $message {
-    validate_string($message)
-    $opt_message = "  message => \"${message}\"\n"
-  }
-
-  if $type {
+  if ($type != '') {
     validate_string($type)
     $opt_type = "  type => \"${type}\"\n"
   }
 
+  if ($message != '') {
+    validate_string($message)
+    $opt_message = "  message => \"${message}\"\n"
+  }
+
   #### Write config file
 
-  file { "${logstash::params::configdir}/output_stdout_${name}":
+  file { $conffiles:
     ensure  => present,
     content => "output {\n stdout {\n${opt_debug}${opt_debug_format}${opt_exclude_tags}${opt_fields}${opt_message}${opt_tags}${opt_type} }\n}\n",
-    owner   => 'root',
-    group   => 'root',
-    mode    => '0644',
-    notify  => Class['logstash::service'],
+    mode    => '0440',
+    notify  => Service[$services],
     require => Class['logstash::package', 'logstash::config']
   }
 }

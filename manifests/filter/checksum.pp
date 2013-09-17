@@ -80,19 +80,19 @@
 #   Default value: 10
 #   This variable is optional
 #
-#
-# === Examples
-#
-#
-#
+# [*instances*]
+#   Array of instance names to which this define is.
+#   Value type is array
+#   Default value: [ 'array' ]
+#   This variable is optional
 #
 # === Extra information
 #
-#  This define is created based on LogStash version 1.1.9
+#  This define is created based on LogStash version 1.1.12
 #  Extra information about this filter can be found at:
-#  http://logstash.net/docs/1.1.9/filters/checksum
+#  http://logstash.net/docs/1.1.12/filters/checksum
 #
-#  Need help? http://logstash.net/docs/1.1.9/learn
+#  Need help? http://logstash.net/docs/1.1.12/learn
 #
 # === Authors
 #
@@ -107,56 +107,80 @@ define logstash::filter::checksum (
   $remove_tag   = '',
   $tags         = '',
   $type         = '',
-  $order        = 10
+  $order        = 10,
+  $instances    = [ 'agent' ]
 ) {
-
 
   require logstash::params
 
-  #### Validate parameters
-  if $keys {
-    validate_array($keys)
-    $arr_keys = join($keys, '\', \'')
-    $opt_keys = "  keys => ['${arr_keys}']\n"
+  File {
+    owner => $logstash::logstash_user,
+    group => $logstash::logstash_group
   }
 
-  if $add_tag {
+  if $logstash::multi_instance == true {
+
+    $confdirstart = prefix($instances, "${logstash::configdir}/")
+    $conffiles    = suffix($confdirstart, "/config/filter_${order}_checksum_${name}")
+    $services     = prefix($instances, 'logstash-')
+    $filesdir     = "${logstash::configdir}/files/filter/checksum/${name}"
+
+  } else {
+
+    $conffiles = "${logstash::configdir}/conf.d/filter_${order}_checksum_${name}"
+    $services  = 'logstash'
+    $filesdir  = "${logstash::configdir}/files/filter/checksum/${name}"
+
+  }
+
+  #### Validate parameters
+
+  validate_array($instances)
+
+  if ($add_tag != '') {
     validate_array($add_tag)
     $arr_add_tag = join($add_tag, '\', \'')
     $opt_add_tag = "  add_tag => ['${arr_add_tag}']\n"
   }
 
-  if $tags {
+  if ($tags != '') {
     validate_array($tags)
     $arr_tags = join($tags, '\', \'')
     $opt_tags = "  tags => ['${arr_tags}']\n"
   }
 
-  if $exclude_tags {
+  if ($exclude_tags != '') {
     validate_array($exclude_tags)
     $arr_exclude_tags = join($exclude_tags, '\', \'')
     $opt_exclude_tags = "  exclude_tags => ['${arr_exclude_tags}']\n"
   }
 
-  if $remove_tag {
+  if ($keys != '') {
+    validate_array($keys)
+    $arr_keys = join($keys, '\', \'')
+    $opt_keys = "  keys => ['${arr_keys}']\n"
+  }
+
+  if ($remove_tag != '') {
     validate_array($remove_tag)
     $arr_remove_tag = join($remove_tag, '\', \'')
     $opt_remove_tag = "  remove_tag => ['${arr_remove_tag}']\n"
   }
 
-  if $add_field {
+  if ($add_field != '') {
     validate_hash($add_field)
-    $arr_add_field = inline_template('<%= add_field.to_a.flatten.inspect %>')
+    $var_add_field = $add_field
+    $arr_add_field = inline_template('<%= "["+var_add_field.sort.collect { |k,v| "\"#{k}\", \"#{v}\"" }.join(", ")+"]" %>')
     $opt_add_field = "  add_field => ${arr_add_field}\n"
   }
 
-  if $order {
+  if ($order != '') {
     if ! is_numeric($order) {
       fail("\"${order}\" is not a valid order parameter value")
     }
   }
 
-  if $algorithm {
+  if ($algorithm != '') {
     if ! ($algorithm in ['md5', 'sha128', 'sha256', 'sha384']) {
       fail("\"${algorithm}\" is not a valid algorithm parameter value")
     } else {
@@ -164,20 +188,18 @@ define logstash::filter::checksum (
     }
   }
 
-  if $type {
+  if ($type != '') {
     validate_string($type)
     $opt_type = "  type => \"${type}\"\n"
   }
 
   #### Write config file
 
-  file { "${logstash::params::configdir}/filter_${order}_checksum_${name}":
+  file { $conffiles:
     ensure  => present,
     content => "filter {\n checksum {\n${opt_add_field}${opt_add_tag}${opt_algorithm}${opt_exclude_tags}${opt_keys}${opt_remove_tag}${opt_tags}${opt_type} }\n}\n",
-    owner   => 'root',
-    group   => 'root',
-    mode    => '0644',
-    notify  => Class['logstash::service'],
+    mode    => '0440',
+    notify  => Service[$services],
     require => Class['logstash::package', 'logstash::config']
   }
 }

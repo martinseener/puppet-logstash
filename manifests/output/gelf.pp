@@ -74,9 +74,11 @@
 #   The GELF message level. Dynamic values like %{level} are permitted
 #   here; useful if you want to parse the 'log level' from an event and
 #   use that as the gelf level/severity.  Values here can be integers
-#   [0..7] inclusive or any of "debug", "info", "warn", "error", "fatal",
-#   "unknown" (case insensitive). Single-character versions of these are
-#   also valid, "d", "i", "w", "e", "f", "u"
+#   [0..7] inclusive or any of "debug", "info", "warn", "error", "fatal"
+#   (case insensitive). Single-character versions of these are also valid,
+#   "d", "i", "w", "e", "f", "u" The following additional severitylabels
+#   from logstash's  syslogpri filter are accepted: "emergency", "alert",
+#   "critical",  "warning", "notice", and "informational"
 #   Value type is array
 #   Default value: ["%{severity}", "INFO"]
 #   This variable is optional
@@ -112,6 +114,13 @@
 #   Default value: true
 #   This variable is optional
 #
+# [*ship_tags*]
+#   Ship tags within events. This will cause logstash to ship the tags of
+#   an event as the field _tags.
+#   Value type is boolean
+#   Default value: true
+#   This variable is optional
+#
 # [*short_message*]
 #   The GELF short message field name. If the field does not exist or is
 #   empty, the event message is taken instead.
@@ -134,20 +143,19 @@
 #   Default value: ""
 #   This variable is optional
 #
-#
-#
-# === Examples
-#
-#
-#
+# [*instances*]
+#   Array of instance names to which this define is.
+#   Value type is array
+#   Default value: [ 'array' ]
+#   This variable is optional
 #
 # === Extra information
 #
-#  This define is created based on LogStash version 1.1.9
+#  This define is created based on LogStash version 1.1.12
 #  Extra information about this output can be found at:
-#  http://logstash.net/docs/1.1.9/outputs/gelf
+#  http://logstash.net/docs/1.1.12/outputs/gelf
 #
-#  Need help? http://logstash.net/docs/1.1.9/learn
+#  Need help? http://logstash.net/docs/1.1.12/learn
 #
 # === Authors
 #
@@ -155,70 +163,100 @@
 #
 define logstash::output::gelf (
   $host,
-  $ignore_metadata = '',
+  $level           = '',
   $exclude_tags    = '',
   $facility        = '',
   $fields          = '',
   $file            = '',
   $full_message    = '',
   $chunksize       = '',
+  $ignore_metadata = '',
   $custom_fields   = '',
-  $level           = '',
   $line            = '',
   $port            = '',
   $sender          = '',
   $ship_metadata   = '',
+  $ship_tags       = '',
   $short_message   = '',
   $tags            = '',
-  $type            = ''
+  $type            = '',
+  $instances       = [ 'agent' ]
 ) {
-
 
   require logstash::params
 
+  File {
+    owner => $logstash::logstash_user,
+    group => $logstash::logstash_group
+  }
+
+  if $logstash::multi_instance == true {
+
+    $confdirstart = prefix($instances, "${logstash::configdir}/")
+    $conffiles    = suffix($confdirstart, "/config/output_gelf_${name}")
+    $services     = prefix($instances, 'logstash-')
+    $filesdir     = "${logstash::configdir}/files/output/gelf/${name}"
+
+  } else {
+
+    $conffiles = "${logstash::configdir}/conf.d/output_gelf_${name}"
+    $services  = 'logstash'
+    $filesdir  = "${logstash::configdir}/files/output/gelf/${name}"
+
+  }
+
   #### Validate parameters
-  if $ignore_metadata {
-    validate_array($ignore_metadata)
-    $arr_ignore_metadata = join($ignore_metadata, '\', \'')
-    $opt_ignore_metadata = "  ignore_metadata => ['${arr_ignore_metadata}']\n"
-  }
 
-  if $level {
-    validate_array($level)
-    $arr_level = join($level, '\', \'')
-    $opt_level = "  level => ['${arr_level}']\n"
-  }
+  validate_array($instances)
 
-  if $exclude_tags {
-    validate_array($exclude_tags)
-    $arr_exclude_tags = join($exclude_tags, '\', \'')
-    $opt_exclude_tags = "  exclude_tags => ['${arr_exclude_tags}']\n"
-  }
-
-  if $fields {
-    validate_array($fields)
-    $arr_fields = join($fields, '\', \'')
-    $opt_fields = "  fields => ['${arr_fields}']\n"
-  }
-
-  if $tags {
+  if ($tags != '') {
     validate_array($tags)
     $arr_tags = join($tags, '\', \'')
     $opt_tags = "  tags => ['${arr_tags}']\n"
   }
 
-  if $ship_metadata {
+  if ($exclude_tags != '') {
+    validate_array($exclude_tags)
+    $arr_exclude_tags = join($exclude_tags, '\', \'')
+    $opt_exclude_tags = "  exclude_tags => ['${arr_exclude_tags}']\n"
+  }
+
+  if ($ignore_metadata != '') {
+    validate_array($ignore_metadata)
+    $arr_ignore_metadata = join($ignore_metadata, '\', \'')
+    $opt_ignore_metadata = "  ignore_metadata => ['${arr_ignore_metadata}']\n"
+  }
+
+  if ($fields != '') {
+    validate_array($fields)
+    $arr_fields = join($fields, '\', \'')
+    $opt_fields = "  fields => ['${arr_fields}']\n"
+  }
+
+  if ($level != '') {
+    validate_array($level)
+    $arr_level = join($level, '\', \'')
+    $opt_level = "  level => ['${arr_level}']\n"
+  }
+
+  if ($ship_tags != '') {
+    validate_bool($ship_tags)
+    $opt_ship_tags = "  ship_tags => ${ship_tags}\n"
+  }
+
+  if ($ship_metadata != '') {
     validate_bool($ship_metadata)
     $opt_ship_metadata = "  ship_metadata => ${ship_metadata}\n"
   }
 
-  if $custom_fields {
+  if ($custom_fields != '') {
     validate_hash($custom_fields)
-    $arr_custom_fields = inline_template('<%= custom_fields.to_a.flatten.inspect %>')
+    $var_custom_fields = $custom_fields
+    $arr_custom_fields = inline_template('<%= "["+var_custom_fields.sort.collect { |k,v| "\"#{k}\", \"#{v}\"" }.join(", ")+"]" %>')
     $opt_custom_fields = "  custom_fields => ${arr_custom_fields}\n"
   }
 
-  if $chunksize {
+  if ($chunksize != '') {
     if ! is_numeric($chunksize) {
       fail("\"${chunksize}\" is not a valid chunksize parameter value")
     } else {
@@ -226,7 +264,7 @@ define logstash::output::gelf (
     }
   }
 
-  if $port {
+  if ($port != '') {
     if ! is_numeric($port) {
       fail("\"${port}\" is not a valid port parameter value")
     } else {
@@ -234,55 +272,53 @@ define logstash::output::gelf (
     }
   }
 
-  if $sender {
+  if ($sender != '') {
     validate_string($sender)
     $opt_sender = "  sender => \"${sender}\"\n"
   }
 
-  if $line {
+  if ($line != '') {
     validate_string($line)
     $opt_line = "  line => \"${line}\"\n"
   }
 
-  if $host {
-    validate_string($host)
-    $opt_host = "  host => \"${host}\"\n"
-  }
-
-  if $full_message {
-    validate_string($full_message)
-    $opt_full_message = "  full_message => \"${full_message}\"\n"
-  }
-
-  if $file {
-    validate_string($file)
-    $opt_file = "  file => \"${file}\"\n"
-  }
-
-  if $short_message {
-    validate_string($short_message)
-    $opt_short_message = "  short_message => \"${short_message}\"\n"
-  }
-
-  if $facility {
+  if ($facility != '') {
     validate_string($facility)
     $opt_facility = "  facility => \"${facility}\"\n"
   }
 
-  if $type {
+  if ($file != '') {
+    validate_string($file)
+    $opt_file = "  file => \"${file}\"\n"
+  }
+
+  if ($short_message != '') {
+    validate_string($short_message)
+    $opt_short_message = "  short_message => \"${short_message}\"\n"
+  }
+
+  if ($host != '') {
+    validate_string($host)
+    $opt_host = "  host => \"${host}\"\n"
+  }
+
+  if ($type != '') {
     validate_string($type)
     $opt_type = "  type => \"${type}\"\n"
   }
 
+  if ($full_message != '') {
+    validate_string($full_message)
+    $opt_full_message = "  full_message => \"${full_message}\"\n"
+  }
+
   #### Write config file
 
-  file { "${logstash::params::configdir}/output_gelf_${name}":
+  file { $conffiles:
     ensure  => present,
-    content => "output {\n gelf {\n${opt_chunksize}${opt_custom_fields}${opt_exclude_tags}${opt_facility}${opt_fields}${opt_file}${opt_full_message}${opt_host}${opt_ignore_metadata}${opt_level}${opt_line}${opt_port}${opt_sender}${opt_ship_metadata}${opt_short_message}${opt_tags}${opt_type} }\n}\n",
-    owner   => 'root',
-    group   => 'root',
-    mode    => '0644',
-    notify  => Class['logstash::service'],
+    content => "output {\n gelf {\n${opt_chunksize}${opt_custom_fields}${opt_exclude_tags}${opt_facility}${opt_fields}${opt_file}${opt_full_message}${opt_host}${opt_ignore_metadata}${opt_level}${opt_line}${opt_port}${opt_sender}${opt_ship_metadata}${opt_ship_tags}${opt_short_message}${opt_tags}${opt_type} }\n}\n",
+    mode    => '0440',
+    notify  => Service[$services],
     require => Class['logstash::package', 'logstash::config']
   }
 }

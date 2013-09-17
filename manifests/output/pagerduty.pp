@@ -72,20 +72,19 @@
 #   Default value: ""
 #   This variable is optional
 #
-#
-#
-# === Examples
-#
-#
-#
+# [*instances*]
+#   Array of instance names to which this define is.
+#   Value type is array
+#   Default value: [ 'array' ]
+#   This variable is optional
 #
 # === Extra information
 #
-#  This define is created based on LogStash version 1.1.9
+#  This define is created based on LogStash version 1.1.12
 #  Extra information about this output can be found at:
-#  http://logstash.net/docs/1.1.9/outputs/pagerduty
+#  http://logstash.net/docs/1.1.12/outputs/pagerduty
 #
-#  Need help? http://logstash.net/docs/1.1.9/learn
+#  Need help? http://logstash.net/docs/1.1.12/learn
 #
 # === Authors
 #
@@ -101,38 +100,62 @@ define logstash::output::pagerduty (
   $pdurl        = '',
   $description  = '',
   $tags         = '',
-  $type         = ''
+  $type         = '',
+  $instances    = [ 'agent' ]
 ) {
-
 
   require logstash::params
 
-  #### Validate parameters
-  if $fields {
-    validate_array($fields)
-    $arr_fields = join($fields, '\', \'')
-    $opt_fields = "  fields => ['${arr_fields}']\n"
+  File {
+    owner => $logstash::logstash_user,
+    group => $logstash::logstash_group
   }
 
-  if $tags {
+  if $logstash::multi_instance == true {
+
+    $confdirstart = prefix($instances, "${logstash::configdir}/")
+    $conffiles    = suffix($confdirstart, "/config/output_pagerduty_${name}")
+    $services     = prefix($instances, 'logstash-')
+    $filesdir     = "${logstash::configdir}/files/output/pagerduty/${name}"
+
+  } else {
+
+    $conffiles = "${logstash::configdir}/conf.d/output_pagerduty_${name}"
+    $services  = 'logstash'
+    $filesdir  = "${logstash::configdir}/files/output/pagerduty/${name}"
+
+  }
+
+  #### Validate parameters
+
+  validate_array($instances)
+
+  if ($tags != '') {
     validate_array($tags)
     $arr_tags = join($tags, '\', \'')
     $opt_tags = "  tags => ['${arr_tags}']\n"
   }
 
-  if $exclude_tags {
+  if ($fields != '') {
+    validate_array($fields)
+    $arr_fields = join($fields, '\', \'')
+    $opt_fields = "  fields => ['${arr_fields}']\n"
+  }
+
+  if ($exclude_tags != '') {
     validate_array($exclude_tags)
     $arr_exclude_tags = join($exclude_tags, '\', \'')
     $opt_exclude_tags = "  exclude_tags => ['${arr_exclude_tags}']\n"
   }
 
-  if $details {
+  if ($details != '') {
     validate_hash($details)
-    $arr_details = inline_template('<%= details.to_a.flatten.inspect %>')
+    $var_details = $details
+    $arr_details = inline_template('<%= "["+var_details.sort.collect { |k,v| "\"#{k}\", \"#{v}\"" }.join(", ")+"]" %>')
     $opt_details = "  details => ${arr_details}\n"
   }
 
-  if $event_type {
+  if ($event_type != '') {
     if ! ($event_type in ['trigger', 'acknowledge', 'resolve']) {
       fail("\"${event_type}\" is not a valid event_type parameter value")
     } else {
@@ -140,40 +163,38 @@ define logstash::output::pagerduty (
     }
   }
 
-  if $incident_key {
+  if ($incident_key != '') {
     validate_string($incident_key)
     $opt_incident_key = "  incident_key => \"${incident_key}\"\n"
   }
 
-  if $pdurl {
-    validate_string($pdurl)
-    $opt_pdurl = "  pdurl => \"${pdurl}\"\n"
-  }
-
-  if $service_key {
+  if ($service_key != '') {
     validate_string($service_key)
     $opt_service_key = "  service_key => \"${service_key}\"\n"
   }
 
-  if $description {
-    validate_string($description)
-    $opt_description = "  description => \"${description}\"\n"
+  if ($pdurl != '') {
+    validate_string($pdurl)
+    $opt_pdurl = "  pdurl => \"${pdurl}\"\n"
   }
 
-  if $type {
+  if ($type != '') {
     validate_string($type)
     $opt_type = "  type => \"${type}\"\n"
   }
 
+  if ($description != '') {
+    validate_string($description)
+    $opt_description = "  description => \"${description}\"\n"
+  }
+
   #### Write config file
 
-  file { "${logstash::params::configdir}/output_pagerduty_${name}":
+  file { $conffiles:
     ensure  => present,
     content => "output {\n pagerduty {\n${opt_description}${opt_details}${opt_event_type}${opt_exclude_tags}${opt_fields}${opt_incident_key}${opt_pdurl}${opt_service_key}${opt_tags}${opt_type} }\n}\n",
-    owner   => 'root',
-    group   => 'root',
-    mode    => '0644',
-    notify  => Class['logstash::service'],
+    mode    => '0440',
+    notify  => Service[$services],
     require => Class['logstash::package', 'logstash::config']
   }
 }

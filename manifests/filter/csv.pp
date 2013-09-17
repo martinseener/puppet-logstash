@@ -6,15 +6,6 @@
 #
 # === Parameters
 #
-# [*(?-mix:[A-Za-z0-9_-]+)*]
-#   Config for csv is:   "source =&gt; dest". The CSV data in the value of
-#   the source field will be expanded into a datastructure in the "dest"
-#   field.  Note: if the "dest" field already exists, it will be
-#   overridden.
-#   Value type is string
-#   Default value: None
-#   This variable is optional
-#
 # [*add_field*]
 #   If this filter is successful, add any arbitrary fields to this event.
 #   Example:  filter {   csv {     add_field =&gt; [ "sample", "Hello
@@ -35,18 +26,19 @@
 #   Default value: []
 #   This variable is optional
 #
-# [*exclude_tags*]
-#   Only handle events without any of these tags. Note this check is
-#   additional to type and tags.
+# [*columns*]
+#   Define a list of column names (in the order they appear in the CSV, as
+#   if it were a header line). If this is not specified or there are not
+#   enough columns specified, the default column name is "columnX" (where
+#   X is the field number, starting from 1). This deprecates the 'fields'
+#   variable. Optional.
 #   Value type is array
 #   Default value: []
 #   This variable is optional
 #
-# [*fields*]
-#   Define a list of field names (in the order they appear in the CSV, as
-#   if it were a header line). If this is not specified or there are not
-#   enough fields specified, the default field name is "fieldN" (where N
-#   is the field number, starting from 1). Optional.
+# [*exclude_tags*]
+#   Only handle events without any of these tags. Note this check is
+#   additional to type and tags.
 #   Value type is array
 #   Default value: []
 #   This variable is optional
@@ -69,11 +61,24 @@
 #   Default value: ","
 #   This variable is optional
 #
+# [*source*]
+#   The CSV data in the value of the source field will be expanded into a
+#   datastructure. This deprecates the regexp [A-Za-z0-9_-] variable.
+#   Value type is string
+#   Default value: None
+#   This variable is optional
+#
 # [*tags*]
 #   Only handle events with all of these tags.  Note that if you specify a
 #   type, the event must also match that type. Optional.
 #   Value type is array
 #   Default value: []
+#   This variable is optional
+#
+# [*target*]
+#   Define target for placing the data Defaults to @fields Optional
+#   Value type is string
+#   Default value: "@fields"
 #   This variable is optional
 #
 # [*type*]
@@ -90,19 +95,19 @@
 #   Default value: 10
 #   This variable is optional
 #
-#
-# === Examples
-#
-#
-#
+# [*instances*]
+#   Array of instance names to which this define is.
+#   Value type is array
+#   Default value: [ 'array' ]
+#   This variable is optional
 #
 # === Extra information
 #
-#  This define is created based on LogStash version 1.1.9
+#  This define is created based on LogStash version 1.1.12
 #  Extra information about this filter can be found at:
-#  http://logstash.net/docs/1.1.9/filters/csv
+#  http://logstash.net/docs/1.1.12/filters/csv
 #
-#  Need help? http://logstash.net/docs/1.1.9/learn
+#  Need help? http://logstash.net/docs/1.1.12/learn
 #
 # === Authors
 #
@@ -111,80 +116,114 @@
 define logstash::filter::csv (
   $add_field    = '',
   $add_tag      = '',
+  $columns      = '',
   $exclude_tags = '',
-  $fields       = '',
   $remove_tag   = '',
   $separator    = '',
+  $source       = '',
   $tags         = '',
+  $target       = '',
   $type         = '',
-  $order        = 10
+  $order        = 10,
+  $instances    = [ 'agent' ]
 ) {
-
 
   require logstash::params
 
-  #### Validate parameters
-  if $remove_tag {
-    validate_array($remove_tag)
-    $arr_remove_tag = join($remove_tag, '\', \'')
-    $opt_remove_tag = "  remove_tag => ['${arr_remove_tag}']\n"
+  File {
+    owner => $logstash::logstash_user,
+    group => $logstash::logstash_group
   }
 
-  if $tags {
+  if $logstash::multi_instance == true {
+
+    $confdirstart = prefix($instances, "${logstash::configdir}/")
+    $conffiles    = suffix($confdirstart, "/config/filter_${order}_csv_${name}")
+    $services     = prefix($instances, 'logstash-')
+    $filesdir     = "${logstash::configdir}/files/filter/csv/${name}"
+
+  } else {
+
+    $conffiles = "${logstash::configdir}/conf.d/filter_${order}_csv_${name}"
+    $services  = 'logstash'
+    $filesdir  = "${logstash::configdir}/files/filter/csv/${name}"
+
+  }
+
+  #### Validate parameters
+
+  validate_array($instances)
+
+  if ($tags != '') {
     validate_array($tags)
     $arr_tags = join($tags, '\', \'')
     $opt_tags = "  tags => ['${arr_tags}']\n"
   }
 
-  if $add_tag {
+  if ($add_tag != '') {
     validate_array($add_tag)
     $arr_add_tag = join($add_tag, '\', \'')
     $opt_add_tag = "  add_tag => ['${arr_add_tag}']\n"
   }
 
-  if $fields {
-    validate_array($fields)
-    $arr_fields = join($fields, '\', \'')
-    $opt_fields = "  fields => ['${arr_fields}']\n"
+  if ($columns != '') {
+    validate_array($columns)
+    $arr_columns = join($columns, '\', \'')
+    $opt_columns = "  columns => ['${arr_columns}']\n"
   }
 
-  if $exclude_tags {
+  if ($remove_tag != '') {
+    validate_array($remove_tag)
+    $arr_remove_tag = join($remove_tag, '\', \'')
+    $opt_remove_tag = "  remove_tag => ['${arr_remove_tag}']\n"
+  }
+
+  if ($exclude_tags != '') {
     validate_array($exclude_tags)
     $arr_exclude_tags = join($exclude_tags, '\', \'')
     $opt_exclude_tags = "  exclude_tags => ['${arr_exclude_tags}']\n"
   }
 
-  if $add_field {
+  if ($add_field != '') {
     validate_hash($add_field)
-    $arr_add_field = inline_template('<%= add_field.to_a.flatten.inspect %>')
+    $var_add_field = $add_field
+    $arr_add_field = inline_template('<%= "["+var_add_field.sort.collect { |k,v| "\"#{k}\", \"#{v}\"" }.join(", ")+"]" %>')
     $opt_add_field = "  add_field => ${arr_add_field}\n"
   }
 
-  if $order {
+  if ($order != '') {
     if ! is_numeric($order) {
       fail("\"${order}\" is not a valid order parameter value")
     }
   }
 
-  if $separator {
+  if ($separator != '') {
     validate_string($separator)
     $opt_separator = "  separator => \"${separator}\"\n"
   }
 
-  if $type {
+  if ($target != '') {
+    validate_string($target)
+    $opt_target = "  target => \"${target}\"\n"
+  }
+
+  if ($type != '') {
     validate_string($type)
     $opt_type = "  type => \"${type}\"\n"
   }
 
+  if ($source != '') {
+    validate_string($source)
+    $opt_source = "  source => \"${source}\"\n"
+  }
+
   #### Write config file
 
-  file { "${logstash::params::configdir}/filter_${order}_csv_${name}":
+  file { $conffiles:
     ensure  => present,
-    content => "filter {\n csv {\n${opt_add_field}${opt_add_tag}${opt_exclude_tags}${opt_fields}${opt_remove_tag}${opt_separator}${opt_tags}${opt_type} }\n}\n",
-    owner   => 'root',
-    group   => 'root',
-    mode    => '0644',
-    notify  => Class['logstash::service'],
+    content => "filter {\n csv {\n${opt_add_field}${opt_add_tag}${opt_columns}${opt_exclude_tags}${opt_remove_tag}${opt_separator}${opt_source}${opt_tags}${opt_target}${opt_type} }\n}\n",
+    mode    => '0440',
+    notify  => Service[$services],
     require => Class['logstash::package', 'logstash::config']
   }
 }

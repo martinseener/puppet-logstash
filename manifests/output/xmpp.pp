@@ -75,20 +75,19 @@
 #   Default value: None
 #   This variable is optional
 #
-#
-#
-# === Examples
-#
-#
-#
+# [*instances*]
+#   Array of instance names to which this define is.
+#   Value type is array
+#   Default value: [ 'array' ]
+#   This variable is optional
 #
 # === Extra information
 #
-#  This define is created based on LogStash version 1.1.9
+#  This define is created based on LogStash version 1.1.12
 #  Extra information about this output can be found at:
-#  http://logstash.net/docs/1.1.9/outputs/xmpp
+#  http://logstash.net/docs/1.1.12/outputs/xmpp
 #
-#  Need help? http://logstash.net/docs/1.1.9/learn
+#  Need help? http://logstash.net/docs/1.1.12/learn
 #
 # === Authors
 #
@@ -104,77 +103,98 @@ define logstash::output::xmpp (
   $tags         = '',
   $type         = '',
   $fields       = '',
-  $users        = ''
+  $users        = '',
+  $instances    = [ 'agent' ]
 ) {
-
 
   require logstash::params
 
+  File {
+    owner => $logstash::logstash_user,
+    group => $logstash::logstash_group
+  }
+
+  if $logstash::multi_instance == true {
+
+    $confdirstart = prefix($instances, "${logstash::configdir}/")
+    $conffiles    = suffix($confdirstart, "/config/output_xmpp_${name}")
+    $services     = prefix($instances, 'logstash-')
+    $filesdir     = "${logstash::configdir}/files/output/xmpp/${name}"
+
+  } else {
+
+    $conffiles = "${logstash::configdir}/conf.d/output_xmpp_${name}"
+    $services  = 'logstash'
+    $filesdir  = "${logstash::configdir}/files/output/xmpp/${name}"
+
+  }
+
   #### Validate parameters
-  if $exclude_tags {
+  if ($exclude_tags != '') {
     validate_array($exclude_tags)
     $arr_exclude_tags = join($exclude_tags, '\', \'')
     $opt_exclude_tags = "  exclude_tags => ['${arr_exclude_tags}']\n"
   }
 
-  if $fields {
+  if ($fields != '') {
     validate_array($fields)
     $arr_fields = join($fields, '\', \'')
     $opt_fields = "  fields => ['${arr_fields}']\n"
   }
 
-  if $users {
+
+  validate_array($instances)
+
+  if ($users != '') {
     validate_array($users)
     $arr_users = join($users, '\', \'')
     $opt_users = "  users => ['${arr_users}']\n"
   }
 
-  if $tags {
+  if ($tags != '') {
     validate_array($tags)
     $arr_tags = join($tags, '\', \'')
     $opt_tags = "  tags => ['${arr_tags}']\n"
   }
 
-  if $rooms {
+  if ($rooms != '') {
     validate_array($rooms)
     $arr_rooms = join($rooms, '\', \'')
     $opt_rooms = "  rooms => ['${arr_rooms}']\n"
   }
 
-  if $password {
+  if ($password != '') {
     validate_string($password)
     $opt_password = "  password => \"${password}\"\n"
   }
 
-  if $type {
-    validate_string($type)
-    $opt_type = "  type => \"${type}\"\n"
-  }
-
-  if $message {
-    validate_string($message)
-    $opt_message = "  message => \"${message}\"\n"
-  }
-
-  if $user {
+  if ($user != '') {
     validate_string($user)
     $opt_user = "  user => \"${user}\"\n"
   }
 
-  if $host {
+  if ($type != '') {
+    validate_string($type)
+    $opt_type = "  type => \"${type}\"\n"
+  }
+
+  if ($message != '') {
+    validate_string($message)
+    $opt_message = "  message => \"${message}\"\n"
+  }
+
+  if ($host != '') {
     validate_string($host)
     $opt_host = "  host => \"${host}\"\n"
   }
 
   #### Write config file
 
-  file { "${logstash::params::configdir}/output_xmpp_${name}":
+  file { $conffiles:
     ensure  => present,
     content => "output {\n xmpp {\n${opt_exclude_tags}${opt_fields}${opt_host}${opt_message}${opt_password}${opt_rooms}${opt_tags}${opt_type}${opt_user}${opt_users} }\n}\n",
-    owner   => 'root',
-    group   => 'root',
-    mode    => '0644',
-    notify  => Class['logstash::service'],
+    mode    => '0440',
+    notify  => Service[$services],
     require => Class['logstash::package', 'logstash::config']
   }
 }

@@ -105,20 +105,19 @@
 #   Default value: ""
 #   This variable is optional
 #
-#
-#
-# === Examples
-#
-#
-#
+# [*instances*]
+#   Array of instance names to which this define is.
+#   Value type is array
+#   Default value: [ 'array' ]
+#   This variable is optional
 #
 # === Extra information
 #
-#  This define is created based on LogStash version 1.1.9
+#  This define is created based on LogStash version 1.1.12
 #  Extra information about this output can be found at:
-#  http://logstash.net/docs/1.1.9/outputs/syslog
+#  http://logstash.net/docs/1.1.12/outputs/syslog
 #
-#  Need help? http://logstash.net/docs/1.1.9/learn
+#  Need help? http://logstash.net/docs/1.1.12/learn
 #
 # === Authors
 #
@@ -129,42 +128,65 @@ define logstash::output::syslog (
   $severity,
   $port,
   $host,
-  $procid       = '',
+  $protocol     = '',
   $msgid        = '',
   $appname      = '',
+  $procid       = '',
   $fields       = '',
-  $protocol     = '',
   $rfc          = '',
   $exclude_tags = '',
   $sourcehost   = '',
   $tags         = '',
   $timestamp    = '',
-  $type         = ''
+  $type         = '',
+  $instances    = [ 'agent' ]
 ) {
-
 
   require logstash::params
 
+  File {
+    owner => $logstash::logstash_user,
+    group => $logstash::logstash_group
+  }
+
+  if $logstash::multi_instance == true {
+
+    $confdirstart = prefix($instances, "${logstash::configdir}/")
+    $conffiles    = suffix($confdirstart, "/config/output_syslog_${name}")
+    $services     = prefix($instances, 'logstash-')
+    $filesdir     = "${logstash::configdir}/files/output/syslog/${name}"
+
+  } else {
+
+    $conffiles = "${logstash::configdir}/conf.d/output_syslog_${name}"
+    $services  = 'logstash'
+    $filesdir  = "${logstash::configdir}/files/output/syslog/${name}"
+
+  }
+
   #### Validate parameters
-  if $exclude_tags {
+
+  validate_array($instances)
+
+  if ($exclude_tags != '') {
     validate_array($exclude_tags)
     $arr_exclude_tags = join($exclude_tags, '\', \'')
     $opt_exclude_tags = "  exclude_tags => ['${arr_exclude_tags}']\n"
   }
 
-  if $tags {
-    validate_array($tags)
-    $arr_tags = join($tags, '\', \'')
-    $opt_tags = "  tags => ['${arr_tags}']\n"
-  }
-
-  if $fields {
+  if ($fields != '') {
     validate_array($fields)
     $arr_fields = join($fields, '\', \'')
     $opt_fields = "  fields => ['${arr_fields}']\n"
   }
 
-  if $port {
+  if ($tags != '') {
+    validate_array($tags)
+    $arr_tags = join($tags, '\', \'')
+    $opt_tags = "  tags => ['${arr_tags}']\n"
+  }
+
+  if ($port != '') {
     if ! is_numeric($port) {
       fail("\"${port}\" is not a valid port parameter value")
     } else {
@@ -172,23 +194,7 @@ define logstash::output::syslog (
     }
   }
 
-  if $severity {
-    if ! ($severity in ['emergency', 'alert', 'critical', 'error', 'warning', 'notice', 'informational', 'debug']) {
-      fail("\"${severity}\" is not a valid severity parameter value")
-    } else {
-      $opt_severity = "  severity => \"${severity}\"\n"
-    }
-  }
-
-  if $rfc {
-    if ! ($rfc in ['rfc3164', 'rfc5424']) {
-      fail("\"${rfc}\" is not a valid rfc parameter value")
-    } else {
-      $opt_rfc = "  rfc => \"${rfc}\"\n"
-    }
-  }
-
-  if $facility {
+  if ($facility != '') {
     if ! ($facility in ['kernel', 'user-level', 'mail', 'daemon', 'security/authorization', 'syslogd', 'line printer', 'network news', 'uucp', 'clock', 'security/authorization', 'ftp', 'ntp', 'log audit', 'log alert', 'clock', 'local0', 'local1', 'local2', 'local3', 'local4', 'local5', 'local6', 'local7']) {
       fail("\"${facility}\" is not a valid facility parameter value")
     } else {
@@ -196,7 +202,23 @@ define logstash::output::syslog (
     }
   }
 
-  if $protocol {
+  if ($severity != '') {
+    if ! ($severity in ['emergency', 'alert', 'critical', 'error', 'warning', 'notice', 'informational', 'debug']) {
+      fail("\"${severity}\" is not a valid severity parameter value")
+    } else {
+      $opt_severity = "  severity => \"${severity}\"\n"
+    }
+  }
+
+  if ($rfc != '') {
+    if ! ($rfc in ['rfc3164', 'rfc5424']) {
+      fail("\"${rfc}\" is not a valid rfc parameter value")
+    } else {
+      $opt_rfc = "  rfc => \"${rfc}\"\n"
+    }
+  }
+
+  if ($protocol != '') {
     if ! ($protocol in ['tcp', 'udp']) {
       fail("\"${protocol}\" is not a valid protocol parameter value")
     } else {
@@ -204,50 +226,48 @@ define logstash::output::syslog (
     }
   }
 
-  if $procid {
+  if ($procid != '') {
     validate_string($procid)
     $opt_procid = "  procid => \"${procid}\"\n"
   }
 
-  if $msgid {
+  if ($msgid != '') {
     validate_string($msgid)
     $opt_msgid = "  msgid => \"${msgid}\"\n"
   }
 
-  if $host {
-    validate_string($host)
-    $opt_host = "  host => \"${host}\"\n"
-  }
-
-  if $sourcehost {
+  if ($sourcehost != '') {
     validate_string($sourcehost)
     $opt_sourcehost = "  sourcehost => \"${sourcehost}\"\n"
   }
 
-  if $appname {
-    validate_string($appname)
-    $opt_appname = "  appname => \"${appname}\"\n"
+  if ($host != '') {
+    validate_string($host)
+    $opt_host = "  host => \"${host}\"\n"
   }
 
-  if $timestamp {
+  if ($timestamp != '') {
     validate_string($timestamp)
     $opt_timestamp = "  timestamp => \"${timestamp}\"\n"
   }
 
-  if $type {
+  if ($type != '') {
     validate_string($type)
     $opt_type = "  type => \"${type}\"\n"
   }
 
+  if ($appname != '') {
+    validate_string($appname)
+    $opt_appname = "  appname => \"${appname}\"\n"
+  }
+
   #### Write config file
 
-  file { "${logstash::params::configdir}/output_syslog_${name}":
+  file { $conffiles:
     ensure  => present,
     content => "output {\n syslog {\n${opt_appname}${opt_exclude_tags}${opt_facility}${opt_fields}${opt_host}${opt_msgid}${opt_port}${opt_procid}${opt_protocol}${opt_rfc}${opt_severity}${opt_sourcehost}${opt_tags}${opt_timestamp}${opt_type} }\n}\n",
-    owner   => 'root',
-    group   => 'root',
-    mode    => '0644',
-    notify  => Class['logstash::service'],
+    mode    => '0440',
+    notify  => Service[$services],
     require => Class['logstash::package', 'logstash::config']
   }
 }

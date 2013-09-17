@@ -17,7 +17,6 @@
 # === Parameters
 #
 # [*access_key_id*]
-#   Amazon API credentials.
 #   Value type is string
 #   Default value: None
 #   This variable is optional
@@ -28,11 +27,7 @@
 #   Default value: None
 #   This variable is optional
 #
-# [*credentials*]
-#   Path to YAML file containing a hash of AWS credentials.  This file
-#   will be loaded if access_key_id and secret_access_key aren't set. The
-#   contents of the file should look like this:  --- :access_key_id:
-#   "12345" :secret_access_key: "54321"
+# [*aws_credentials_file*]
 #   Value type is string
 #   Default value: None
 #   This variable is optional
@@ -65,6 +60,13 @@
 #   Default value: None
 #   This variable is optional
 #
+# [*region*]
+#   Value can be any of: "us-east-1", "us-west-1", "us-west-2",
+#   "eu-west-1", "ap-southeast-1", "ap-southeast-2", "ap-northeast-1",
+#   "sa-east-1", "us-gov-west-1"
+#   Default value: "us-east-1"
+#   This variable is optional
+#
 # [*secret_access_key*]
 #   Value type is string
 #   Default value: None
@@ -85,20 +87,24 @@
 #   Default value: ""
 #   This variable is optional
 #
+# [*use_ssl*]
+#   Value type is boolean
+#   Default value: true
+#   This variable is optional
 #
-#
-# === Examples
-#
-#
-#
+# [*instances*]
+#   Array of instance names to which this define is.
+#   Value type is array
+#   Default value: [ 'array' ]
+#   This variable is optional
 #
 # === Extra information
 #
-#  This define is created based on LogStash version 1.1.9
+#  This define is created based on LogStash version 1.1.12
 #  Extra information about this output can be found at:
-#  http://logstash.net/docs/1.1.9/outputs/sns
+#  http://logstash.net/docs/1.1.12/outputs/sns
 #
-#  Need help? http://logstash.net/docs/1.1.9/learn
+#  Need help? http://logstash.net/docs/1.1.12/learn
 #
 # === Authors
 #
@@ -107,39 +113,77 @@
 define logstash::output::sns (
   $access_key_id            = '',
   $arn                      = '',
-  $credentials              = '',
+  $aws_credentials_file     = '',
   $exclude_tags             = '',
   $fields                   = '',
   $format                   = '',
   $publish_boot_message_arn = '',
+  $region                   = '',
   $secret_access_key        = '',
   $tags                     = '',
-  $type                     = ''
+  $type                     = '',
+  $use_ssl                  = '',
+  $instances                = [ 'agent' ]
 ) {
-
 
   require logstash::params
 
+  File {
+    owner => $logstash::logstash_user,
+    group => $logstash::logstash_group
+  }
+
+  if $logstash::multi_instance == true {
+
+    $confdirstart = prefix($instances, "${logstash::configdir}/")
+    $conffiles    = suffix($confdirstart, "/config/output_sns_${name}")
+    $services     = prefix($instances, 'logstash-')
+    $filesdir     = "${logstash::configdir}/files/output/sns/${name}"
+
+  } else {
+
+    $conffiles = "${logstash::configdir}/conf.d/output_sns_${name}"
+    $services  = 'logstash'
+    $filesdir  = "${logstash::configdir}/files/output/sns/${name}"
+
+  }
+
   #### Validate parameters
-  if $exclude_tags {
+
+  validate_array($instances)
+
+  if ($exclude_tags != '') {
     validate_array($exclude_tags)
     $arr_exclude_tags = join($exclude_tags, '\', \'')
     $opt_exclude_tags = "  exclude_tags => ['${arr_exclude_tags}']\n"
   }
 
-  if $tags {
-    validate_array($tags)
-    $arr_tags = join($tags, '\', \'')
-    $opt_tags = "  tags => ['${arr_tags}']\n"
-  }
-
-  if $fields {
+  if ($fields != '') {
     validate_array($fields)
     $arr_fields = join($fields, '\', \'')
     $opt_fields = "  fields => ['${arr_fields}']\n"
   }
 
-  if $format {
+  if ($tags != '') {
+    validate_array($tags)
+    $arr_tags = join($tags, '\', \'')
+    $opt_tags = "  tags => ['${arr_tags}']\n"
+  }
+
+  if ($use_ssl != '') {
+    validate_bool($use_ssl)
+    $opt_use_ssl = "  use_ssl => ${use_ssl}\n"
+  }
+
+  if ($region != '') {
+    if ! ($region in ['us-east-1', 'us-west-1', 'us-west-2', 'eu-west-1', 'ap-southeast-1', 'ap-southeast-2', 'ap-northeast-1', 'sa-east-1', 'us-gov-west-1']) {
+      fail("\"${region}\" is not a valid region parameter value")
+    } else {
+      $opt_region = "  region => \"${region}\"\n"
+    }
+  }
+
+  if ($format != '') {
     if ! ($format in ['json', 'plain']) {
       fail("\"${format}\" is not a valid format parameter value")
     } else {
@@ -147,45 +191,43 @@ define logstash::output::sns (
     }
   }
 
-  if $access_key_id {
-    validate_string($access_key_id)
-    $opt_access_key_id = "  access_key_id => \"${access_key_id}\"\n"
-  }
-
-  if $credentials {
-    validate_string($credentials)
-    $opt_credentials = "  credentials => \"${credentials}\"\n"
-  }
-
-  if $publish_boot_message_arn {
+  if ($publish_boot_message_arn != '') {
     validate_string($publish_boot_message_arn)
     $opt_publish_boot_message_arn = "  publish_boot_message_arn => \"${publish_boot_message_arn}\"\n"
   }
 
-  if $secret_access_key {
+  if ($secret_access_key != '') {
     validate_string($secret_access_key)
     $opt_secret_access_key = "  secret_access_key => \"${secret_access_key}\"\n"
   }
 
-  if $arn {
-    validate_string($arn)
-    $opt_arn = "  arn => \"${arn}\"\n"
+  if ($aws_credentials_file != '') {
+    validate_string($aws_credentials_file)
+    $opt_aws_credentials_file = "  aws_credentials_file => \"${aws_credentials_file}\"\n"
   }
 
-  if $type {
+  if ($type != '') {
     validate_string($type)
     $opt_type = "  type => \"${type}\"\n"
   }
 
+  if ($arn != '') {
+    validate_string($arn)
+    $opt_arn = "  arn => \"${arn}\"\n"
+  }
+
+  if ($access_key_id != '') {
+    validate_string($access_key_id)
+    $opt_access_key_id = "  access_key_id => \"${access_key_id}\"\n"
+  }
+
   #### Write config file
 
-  file { "${logstash::params::configdir}/output_sns_${name}":
+  file { $conffiles:
     ensure  => present,
-    content => "output {\n sns {\n${opt_access_key_id}${opt_arn}${opt_credentials}${opt_exclude_tags}${opt_fields}${opt_format}${opt_publish_boot_message_arn}${opt_secret_access_key}${opt_tags}${opt_type} }\n}\n",
-    owner   => 'root',
-    group   => 'root',
-    mode    => '0644',
-    notify  => Class['logstash::service'],
+    content => "output {\n sns {\n${opt_access_key_id}${opt_arn}${opt_aws_credentials_file}${opt_exclude_tags}${opt_fields}${opt_format}${opt_publish_boot_message_arn}${opt_region}${opt_secret_access_key}${opt_tags}${opt_type}${opt_use_ssl} }\n}\n",
+    mode    => '0440',
+    notify  => Service[$services],
     require => Class['logstash::package', 'logstash::config']
   }
 }

@@ -33,14 +33,6 @@
 #   Default value: []
 #   This variable is optional
 #
-# [*container*]
-#   The name of the container to put all of the key-value pairs into
-#   Example, to place all keys into container kv:  filter { kv { conatiner
-#   =&gt; "kv" } }
-#   Value type is string
-#   Default value: "@fields"
-#   This variable is optional
-#
 # [*exclude_tags*]
 #   Only handle events without any of these tags. Note this check is
 #   additional to type and tags.
@@ -63,7 +55,7 @@
 # [*fields*]
 #   The fields to perform 'key=value' searching on
 #   Value type is array
-#   Default value: ["@message"]
+#   Default value: None
 #   This variable is optional
 #
 # [*prefix*]
@@ -84,11 +76,26 @@
 #   Default value: []
 #   This variable is optional
 #
+# [*source*]
+#   The fields to perform 'key=value' searching on  Example, to use the
+#   @message field:  filter { kv { source =&gt; "@message" } }
+#   Value type is string
+#   Default value: "@message"
+#   This variable is optional
+#
 # [*tags*]
 #   Only handle events with all of these tags.  Note that if you specify a
 #   type, the event must also match that type. Optional.
 #   Value type is array
 #   Default value: []
+#   This variable is optional
+#
+# [*target*]
+#   The name of the container to put all of the key-value pairs into
+#   Example, to place all keys into field kv:  filter { kv { target =&gt;
+#   "kv" } }
+#   Value type is string
+#   Default value: "@fields"
 #   This variable is optional
 #
 # [*trim*]
@@ -122,19 +129,19 @@
 #   Default value: 10
 #   This variable is optional
 #
-#
-# === Examples
-#
-#
-#
+# [*instances*]
+#   Array of instance names to which this define is.
+#   Value type is array
+#   Default value: [ 'array' ]
+#   This variable is optional
 #
 # === Extra information
 #
-#  This define is created based on LogStash version 1.1.9
+#  This define is created based on LogStash version 1.1.12
 #  Extra information about this filter can be found at:
-#  http://logstash.net/docs/1.1.9/filters/kv
+#  http://logstash.net/docs/1.1.12/filters/kv
 #
-#  Need help? http://logstash.net/docs/1.1.9/learn
+#  Need help? http://logstash.net/docs/1.1.12/learn
 #
 # === Authors
 #
@@ -143,104 +150,132 @@
 define logstash::filter::kv (
   $add_field    = '',
   $add_tag      = '',
-  $container    = '',
   $exclude_tags = '',
   $field_split  = '',
   $fields       = '',
   $prefix       = '',
   $remove_tag   = '',
+  $source       = '',
   $tags         = '',
+  $target       = '',
   $trim         = '',
   $type         = '',
   $value_split  = '',
-  $order        = 10
+  $order        = 10,
+  $instances    = [ 'agent' ]
 ) {
-
 
   require logstash::params
 
-  #### Validate parameters
-  if $fields {
-    validate_array($fields)
-    $arr_fields = join($fields, '\', \'')
-    $opt_fields = "  fields => ['${arr_fields}']\n"
+  File {
+    owner => $logstash::logstash_user,
+    group => $logstash::logstash_group
   }
 
-  if $add_tag {
+  if $logstash::multi_instance == true {
+
+    $confdirstart = prefix($instances, "${logstash::configdir}/")
+    $conffiles    = suffix($confdirstart, "/config/filter_${order}_kv_${name}")
+    $services     = prefix($instances, 'logstash-')
+    $filesdir     = "${logstash::configdir}/files/filter/kv/${name}"
+
+  } else {
+
+    $conffiles = "${logstash::configdir}/conf.d/filter_${order}_kv_${name}"
+    $services  = 'logstash'
+    $filesdir  = "${logstash::configdir}/files/filter/kv/${name}"
+
+  }
+
+  #### Validate parameters
+
+  validate_array($instances)
+
+  if ($add_tag != '') {
     validate_array($add_tag)
     $arr_add_tag = join($add_tag, '\', \'')
     $opt_add_tag = "  add_tag => ['${arr_add_tag}']\n"
   }
 
-  if $tags {
+  if ($tags != '') {
     validate_array($tags)
     $arr_tags = join($tags, '\', \'')
     $opt_tags = "  tags => ['${arr_tags}']\n"
   }
 
-  if $remove_tag {
-    validate_array($remove_tag)
-    $arr_remove_tag = join($remove_tag, '\', \'')
-    $opt_remove_tag = "  remove_tag => ['${arr_remove_tag}']\n"
-  }
-
-  if $exclude_tags {
+  if ($exclude_tags != '') {
     validate_array($exclude_tags)
     $arr_exclude_tags = join($exclude_tags, '\', \'')
     $opt_exclude_tags = "  exclude_tags => ['${arr_exclude_tags}']\n"
   }
 
-  if $add_field {
+  if ($remove_tag != '') {
+    validate_array($remove_tag)
+    $arr_remove_tag = join($remove_tag, '\', \'')
+    $opt_remove_tag = "  remove_tag => ['${arr_remove_tag}']\n"
+  }
+
+  if ($fields != '') {
+    validate_array($fields)
+    $arr_fields = join($fields, '\', \'')
+    $opt_fields = "  fields => ['${arr_fields}']\n"
+  }
+
+  if ($add_field != '') {
     validate_hash($add_field)
-    $arr_add_field = inline_template('<%= add_field.to_a.flatten.inspect %>')
+    $var_add_field = $add_field
+    $arr_add_field = inline_template('<%= "["+var_add_field.sort.collect { |k,v| "\"#{k}\", \"#{v}\"" }.join(", ")+"]" %>')
     $opt_add_field = "  add_field => ${arr_add_field}\n"
   }
 
-  if $order {
+  if ($order != '') {
     if ! is_numeric($order) {
       fail("\"${order}\" is not a valid order parameter value")
     }
   }
 
-  if $field_split {
-    validate_string($field_split)
-    $opt_field_split = "  field_split => \"${field_split}\"\n"
-  }
-
-  if $container {
-    validate_string($container)
-    $opt_container = "  container => \"${container}\"\n"
-  }
-
-  if $trim {
+  if ($trim != '') {
     validate_string($trim)
     $opt_trim = "  trim => \"${trim}\"\n"
   }
 
-  if $type {
+  if ($target != '') {
+    validate_string($target)
+    $opt_target = "  target => \"${target}\"\n"
+  }
+
+  if ($field_split != '') {
+    validate_string($field_split)
+    $opt_field_split = "  field_split => \"${field_split}\"\n"
+  }
+
+  if ($type != '') {
     validate_string($type)
     $opt_type = "  type => \"${type}\"\n"
   }
 
-  if $value_split {
+  if ($value_split != '') {
     validate_string($value_split)
     $opt_value_split = "  value_split => \"${value_split}\"\n"
   }
 
-  if $prefix {
+  if ($prefix != '') {
     validate_string($prefix)
     $opt_prefix = "  prefix => \"${prefix}\"\n"
   }
 
+  if ($source != '') {
+    validate_string($source)
+    $opt_source = "  source => \"${source}\"\n"
+  }
+
   #### Write config file
 
-  file { "${logstash::params::configdir}/filter_${order}_kv_${name}":
+  file { $conffiles:
     ensure  => present,
-    content => "filter {\n kv {\n${opt_add_field}${opt_add_tag}${opt_container}${opt_exclude_tags}${opt_field_split}${opt_fields}${opt_prefix}${opt_remove_tag}${opt_tags}${opt_trim}${opt_type}${opt_value_split} }\n}\n",
-    owner   => 'root',
-    group   => 'root',
-    mode    => '0644',
-    notify  => Class['logstash::service'],
+    content => "filter {\n kv {\n${opt_add_field}${opt_add_tag}${opt_exclude_tags}${opt_field_split}${opt_fields}${opt_prefix}${opt_remove_tag}${opt_source}${opt_tags}${opt_target}${opt_trim}${opt_type}${opt_value_split} }\n}\n",
+    mode    => '0440',
+    notify  => Service[$services],
     require => Class['logstash::package', 'logstash::config']
   }
 }

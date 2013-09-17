@@ -28,8 +28,10 @@
 # [*format*]
 #   Set the format of the http body.  If form, then the body will be the
 #   mapping (or whole event) converted into a query parameter string
-#   (foo=bar&amp;baz=fizz...)  Otherwise, the event is sent as json.
-#   Value can be any of: "json", "form"
+#   (foo=bar&amp;baz=fizz...)  If message, then the body will be the
+#   result of formatting the event according to message  Otherwise, the
+#   event is sent as json.
+#   Value can be any of: "json", "form", "message"
 #   Default value: "json"
 #   This variable is optional
 #
@@ -51,6 +53,11 @@
 #   sent.  For example:     mapping =&gt; ["foo", "%{@source_host}",
 #   "bar", "%{@type}"]
 #   Value type is hash
+#   Default value: None
+#   This variable is optional
+#
+# [*message*]
+#   Value type is string
 #   Default value: None
 #   This variable is optional
 #
@@ -83,20 +90,19 @@
 #   Default value: true
 #   This variable is optional
 #
-#
-#
-# === Examples
-#
-#
-#
+# [*instances*]
+#   Array of instance names to which this define is.
+#   Value type is array
+#   Default value: [ 'array' ]
+#   This variable is optional
 #
 # === Extra information
 #
-#  This define is created based on LogStash version 1.1.9
+#  This define is created based on LogStash version 1.1.12
 #  Extra information about this output can be found at:
-#  http://logstash.net/docs/1.1.9/outputs/http
+#  http://logstash.net/docs/1.1.12/outputs/http
 #
-#  Need help? http://logstash.net/docs/1.1.9/learn
+#  Need help? http://logstash.net/docs/1.1.12/learn
 #
 # === Authors
 #
@@ -105,65 +111,83 @@
 define logstash::output::http (
   $http_method,
   $url,
-  $content_type = '',
+  $mapping      = '',
   $format       = '',
   $headers      = '',
+  $content_type = '',
   $fields       = '',
-  $mapping      = '',
+  $message      = '',
   $tags         = '',
   $type         = '',
   $exclude_tags = '',
-  $verify_ssl   = ''
+  $verify_ssl   = '',
+  $instances    = [ 'agent' ]
 ) {
-
 
   require logstash::params
 
-  #### Validate parameters
-  if $fields {
-    validate_array($fields)
-    $arr_fields = join($fields, '\', \'')
-    $opt_fields = "  fields => ['${arr_fields}']\n"
+  File {
+    owner => $logstash::logstash_user,
+    group => $logstash::logstash_group
   }
 
-  if $exclude_tags {
+  if $logstash::multi_instance == true {
+
+    $confdirstart = prefix($instances, "${logstash::configdir}/")
+    $conffiles    = suffix($confdirstart, "/config/output_http_${name}")
+    $services     = prefix($instances, 'logstash-')
+    $filesdir     = "${logstash::configdir}/files/output/http/${name}"
+
+  } else {
+
+    $conffiles = "${logstash::configdir}/conf.d/output_http_${name}"
+    $services  = 'logstash'
+    $filesdir  = "${logstash::configdir}/files/output/http/${name}"
+
+  }
+
+  #### Validate parameters
+
+  validate_array($instances)
+
+  if ($exclude_tags != '') {
     validate_array($exclude_tags)
     $arr_exclude_tags = join($exclude_tags, '\', \'')
     $opt_exclude_tags = "  exclude_tags => ['${arr_exclude_tags}']\n"
   }
 
-  if $tags {
+  if ($fields != '') {
+    validate_array($fields)
+    $arr_fields = join($fields, '\', \'')
+    $opt_fields = "  fields => ['${arr_fields}']\n"
+  }
+
+  if ($tags != '') {
     validate_array($tags)
     $arr_tags = join($tags, '\', \'')
     $opt_tags = "  tags => ['${arr_tags}']\n"
   }
 
-  if $verify_ssl {
+  if ($verify_ssl != '') {
     validate_bool($verify_ssl)
     $opt_verify_ssl = "  verify_ssl => ${verify_ssl}\n"
   }
 
-  if $headers {
+  if ($headers != '') {
     validate_hash($headers)
-    $arr_headers = inline_template('<%= headers.to_a.flatten.inspect %>')
+    $var_headers = $headers
+    $arr_headers = inline_template('<%= "["+var_headers.sort.collect { |k,v| "\"#{k}\", \"#{v}\"" }.join(", ")+"]" %>')
     $opt_headers = "  headers => ${arr_headers}\n"
   }
 
-  if $mapping {
+  if ($mapping != '') {
     validate_hash($mapping)
-    $arr_mapping = inline_template('<%= mapping.to_a.flatten.inspect %>')
+    $var_mapping = $mapping
+    $arr_mapping = inline_template('<%= "["+var_mapping.sort.collect { |k,v| "\"#{k}\", \"#{v}\"" }.join(", ")+"]" %>')
     $opt_mapping = "  mapping => ${arr_mapping}\n"
   }
 
-  if $format {
-    if ! ($format in ['json', 'form']) {
-      fail("\"${format}\" is not a valid format parameter value")
-    } else {
-      $opt_format = "  format => \"${format}\"\n"
-    }
-  }
-
-  if $http_method {
+  if ($http_method != '') {
     if ! ($http_method in ['put', 'post']) {
       fail("\"${http_method}\" is not a valid http_method parameter value")
     } else {
@@ -171,30 +195,41 @@ define logstash::output::http (
     }
   }
 
-  if $type {
-    validate_string($type)
-    $opt_type = "  type => \"${type}\"\n"
+  if ($format != '') {
+    if ! ($format in ['json', 'form', 'message']) {
+      fail("\"${format}\" is not a valid format parameter value")
+    } else {
+      $opt_format = "  format => \"${format}\"\n"
+    }
   }
 
-  if $url {
+  if ($url != '') {
     validate_string($url)
     $opt_url = "  url => \"${url}\"\n"
   }
 
-  if $content_type {
+  if ($type != '') {
+    validate_string($type)
+    $opt_type = "  type => \"${type}\"\n"
+  }
+
+  if ($message != '') {
+    validate_string($message)
+    $opt_message = "  message => \"${message}\"\n"
+  }
+
+  if ($content_type != '') {
     validate_string($content_type)
     $opt_content_type = "  content_type => \"${content_type}\"\n"
   }
 
   #### Write config file
 
-  file { "${logstash::params::configdir}/output_http_${name}":
+  file { $conffiles:
     ensure  => present,
-    content => "output {\n http {\n${opt_content_type}${opt_exclude_tags}${opt_fields}${opt_format}${opt_headers}${opt_http_method}${opt_mapping}${opt_tags}${opt_type}${opt_url}${opt_verify_ssl} }\n}\n",
-    owner   => 'root',
-    group   => 'root',
-    mode    => '0644',
-    notify  => Class['logstash::service'],
+    content => "output {\n http {\n${opt_content_type}${opt_exclude_tags}${opt_fields}${opt_format}${opt_headers}${opt_http_method}${opt_mapping}${opt_message}${opt_tags}${opt_type}${opt_url}${opt_verify_ssl} }\n}\n",
+    mode    => '0440',
+    notify  => Service[$services],
     require => Class['logstash::package', 'logstash::config']
   }
 }

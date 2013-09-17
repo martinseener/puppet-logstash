@@ -45,10 +45,14 @@ class logstash::params {
   #### Defaults for other files
 
   # Config directory
-  $configdir = '/etc/logstash/conf.d'
+  $configdir = '/etc/logstash'
 
   # Logging dir
   $logdir = '/var/log/logstash/'
+
+  # File user/group
+  $logstash_user  = 'root'
+  $logstash_group = 'root'
 
   #### Internal module values
 
@@ -56,11 +60,13 @@ class logstash::params {
   case $::operatingsystem {
     'RedHat', 'CentOS', 'Fedora', 'Scientific', 'Amazon': {
       # main application
-      $package = [ 'logstash' ]
+      $package     = [ 'logstash' ]
+      $installpath = '/usr/share/logstash'
     }
     'Debian', 'Ubuntu': {
       # main application
-      $package = [ 'logstash' ]
+      $package     = [ 'logstash' ]
+      $installpath = '/var/lib/logstash'
     }
     default: {
       fail("\"${module_name}\" provides no package default value

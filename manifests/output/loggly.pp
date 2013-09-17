@@ -44,9 +44,32 @@
 #
 # [*proto*]
 #   Should the log action be sent over https instead of plain http
-#   Defaults to https
 #   Value type is string
 #   Default value: "http"
+#   This variable is optional
+#
+# [*proxy_host*]
+#   Proxy Host
+#   Value type is string
+#   Default value: None
+#   This variable is optional
+#
+# [*proxy_password*]
+#   Proxy Password
+#   Value type is password
+#   Default value: ""
+#   This variable is optional
+#
+# [*proxy_port*]
+#   Proxy Port
+#   Value type is number
+#   Default value: None
+#   This variable is optional
+#
+# [*proxy_user*]
+#   Proxy Username
+#   Value type is string
+#   Default value: None
 #   This variable is optional
 #
 # [*tags*]
@@ -64,20 +87,19 @@
 #   Default value: ""
 #   This variable is optional
 #
-#
-#
-# === Examples
-#
-#
-#
+# [*instances*]
+#   Array of instance names to which this define is.
+#   Value type is array
+#   Default value: [ 'array' ]
+#   This variable is optional
 #
 # === Extra information
 #
-#  This define is created based on LogStash version 1.1.9
+#  This define is created based on LogStash version 1.1.12
 #  Extra information about this output can be found at:
-#  http://logstash.net/docs/1.1.9/outputs/loggly
+#  http://logstash.net/docs/1.1.12/outputs/loggly
 #
-#  Need help? http://logstash.net/docs/1.1.9/learn
+#  Need help? http://logstash.net/docs/1.1.12/learn
 #
 # === Authors
 #
@@ -85,65 +107,113 @@
 #
 define logstash::output::loggly (
   $key,
-  $exclude_tags = '',
-  $host         = '',
-  $fields       = '',
-  $proto        = '',
-  $tags         = '',
-  $type         = ''
+  $proxy_password = '',
+  $host           = '',
+  $exclude_tags   = '',
+  $proto          = '',
+  $proxy_host     = '',
+  $fields         = '',
+  $proxy_port     = '',
+  $proxy_user     = '',
+  $tags           = '',
+  $type           = '',
+  $instances      = [ 'agent' ]
 ) {
-
 
   require logstash::params
 
+  File {
+    owner => $logstash::logstash_user,
+    group => $logstash::logstash_group
+  }
+
+  if $logstash::multi_instance == true {
+
+    $confdirstart = prefix($instances, "${logstash::configdir}/")
+    $conffiles    = suffix($confdirstart, "/config/output_loggly_${name}")
+    $services     = prefix($instances, 'logstash-')
+    $filesdir     = "${logstash::configdir}/files/output/loggly/${name}"
+
+  } else {
+
+    $conffiles = "${logstash::configdir}/conf.d/output_loggly_${name}"
+    $services  = 'logstash'
+    $filesdir  = "${logstash::configdir}/files/output/loggly/${name}"
+
+  }
+
   #### Validate parameters
-  if $exclude_tags {
+  if ($exclude_tags != '') {
     validate_array($exclude_tags)
     $arr_exclude_tags = join($exclude_tags, '\', \'')
     $opt_exclude_tags = "  exclude_tags => ['${arr_exclude_tags}']\n"
   }
 
-  if $fields {
+  if ($fields != '') {
     validate_array($fields)
     $arr_fields = join($fields, '\', \'')
     $opt_fields = "  fields => ['${arr_fields}']\n"
   }
 
-  if $tags {
+  if ($tags != '') {
     validate_array($tags)
     $arr_tags = join($tags, '\', \'')
     $opt_tags = "  tags => ['${arr_tags}']\n"
   }
 
-  if $key {
+
+  validate_array($instances)
+
+  if ($proxy_port != '') {
+    if ! is_numeric($proxy_port) {
+      fail("\"${proxy_port}\" is not a valid proxy_port parameter value")
+    } else {
+      $opt_proxy_port = "  proxy_port => ${proxy_port}\n"
+    }
+  }
+
+  if ($proxy_password != '') {
+    validate_string($proxy_password)
+    $opt_proxy_password = "  proxy_password => \"${proxy_password}\"\n"
+  }
+
+  if ($proxy_user != '') {
+    validate_string($proxy_user)
+    $opt_proxy_user = "  proxy_user => \"${proxy_user}\"\n"
+  }
+
+  if ($proxy_host != '') {
+    validate_string($proxy_host)
+    $opt_proxy_host = "  proxy_host => \"${proxy_host}\"\n"
+  }
+
+  if ($key != '') {
     validate_string($key)
     $opt_key = "  key => \"${key}\"\n"
   }
 
-  if $proto {
-    validate_string($proto)
-    $opt_proto = "  proto => \"${proto}\"\n"
-  }
-
-  if $host {
+  if ($host != '') {
     validate_string($host)
     $opt_host = "  host => \"${host}\"\n"
   }
 
-  if $type {
+  if ($type != '') {
     validate_string($type)
     $opt_type = "  type => \"${type}\"\n"
   }
 
+  if ($proto != '') {
+    validate_string($proto)
+    $opt_proto = "  proto => \"${proto}\"\n"
+  }
+
   #### Write config file
 
-  file { "${logstash::params::configdir}/output_loggly_${name}":
+  file { $conffiles:
     ensure  => present,
-    content => "output {\n loggly {\n${opt_exclude_tags}${opt_fields}${opt_host}${opt_key}${opt_proto}${opt_tags}${opt_type} }\n}\n",
-    owner   => 'root',
-    group   => 'root',
-    mode    => '0644',
-    notify  => Class['logstash::service'],
+    content => "output {\n loggly {\n${opt_exclude_tags}${opt_fields}${opt_host}${opt_key}${opt_proto}${opt_proxy_host}${opt_proxy_password}${opt_proxy_port}${opt_proxy_user}${opt_tags}${opt_type} }\n}\n",
+    mode    => '0440',
+    notify  => Service[$services],
     require => Class['logstash::package', 'logstash::config']
   }
 }

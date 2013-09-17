@@ -113,20 +113,19 @@
 #   Default value: None
 #   This variable is optional
 #
-#
-#
-# === Examples
-#
-#
-#
+# [*instances*]
+#   Array of instance names to which this define is.
+#   Value type is array
+#   Default value: [ 'array' ]
+#   This variable is optional
 #
 # === Extra information
 #
-#  This define is created based on LogStash version 1.1.9
+#  This define is created based on LogStash version 1.1.12
 #  Extra information about this output can be found at:
-#  http://logstash.net/docs/1.1.9/outputs/metriccatcher
+#  http://logstash.net/docs/1.1.12/outputs/metriccatcher
 #
-#  Need help? http://logstash.net/docs/1.1.9/learn
+#  Need help? http://logstash.net/docs/1.1.12/learn
 #
 # === Authors
 #
@@ -144,68 +143,97 @@ define logstash::output::metriccatcher (
   $tags         = '',
   $timer        = '',
   $type         = '',
-  $uniform      = ''
+  $uniform      = '',
+  $instances    = [ 'agent' ]
 ) {
-
 
   require logstash::params
 
-  #### Validate parameters
-  if $exclude_tags {
-    validate_array($exclude_tags)
-    $arr_exclude_tags = join($exclude_tags, '\', \'')
-    $opt_exclude_tags = "  exclude_tags => ['${arr_exclude_tags}']\n"
+  File {
+    owner => $logstash::logstash_user,
+    group => $logstash::logstash_group
   }
 
-  if $tags {
+  if $logstash::multi_instance == true {
+
+    $confdirstart = prefix($instances, "${logstash::configdir}/")
+    $conffiles    = suffix($confdirstart, "/config/output_metriccatcher_${name}")
+    $services     = prefix($instances, 'logstash-')
+    $filesdir     = "${logstash::configdir}/files/output/metriccatcher/${name}"
+
+  } else {
+
+    $conffiles = "${logstash::configdir}/conf.d/output_metriccatcher_${name}"
+    $services  = 'logstash'
+    $filesdir  = "${logstash::configdir}/files/output/metriccatcher/${name}"
+
+  }
+
+  #### Validate parameters
+
+  validate_array($instances)
+
+  if ($tags != '') {
     validate_array($tags)
     $arr_tags = join($tags, '\', \'')
     $opt_tags = "  tags => ['${arr_tags}']\n"
   }
 
-  if $fields {
+  if ($exclude_tags != '') {
+    validate_array($exclude_tags)
+    $arr_exclude_tags = join($exclude_tags, '\', \'')
+    $opt_exclude_tags = "  exclude_tags => ['${arr_exclude_tags}']\n"
+  }
+
+  if ($fields != '') {
     validate_array($fields)
     $arr_fields = join($fields, '\', \'')
     $opt_fields = "  fields => ['${arr_fields}']\n"
   }
 
-  if $meter {
+  if ($meter != '') {
     validate_hash($meter)
-    $arr_meter = inline_template('<%= meter.to_a.flatten.inspect %>')
+    $var_meter = $meter
+    $arr_meter = inline_template('<%= "["+var_meter.sort.collect { |k,v| "\"#{k}\", \"#{v}\"" }.join(", ")+"]" %>')
     $opt_meter = "  meter => ${arr_meter}\n"
   }
 
-  if $gauge {
-    validate_hash($gauge)
-    $arr_gauge = inline_template('<%= gauge.to_a.flatten.inspect %>')
-    $opt_gauge = "  gauge => ${arr_gauge}\n"
-  }
-
-  if $uniform {
-    validate_hash($uniform)
-    $arr_uniform = inline_template('<%= uniform.to_a.flatten.inspect %>')
-    $opt_uniform = "  uniform => ${arr_uniform}\n"
-  }
-
-  if $biased {
+  if ($biased != '') {
     validate_hash($biased)
-    $arr_biased = inline_template('<%= biased.to_a.flatten.inspect %>')
+    $var_biased = $biased
+    $arr_biased = inline_template('<%= "["+var_biased.sort.collect { |k,v| "\"#{k}\", \"#{v}\"" }.join(", ")+"]" %>')
     $opt_biased = "  biased => ${arr_biased}\n"
   }
 
-  if $timer {
-    validate_hash($timer)
-    $arr_timer = inline_template('<%= timer.to_a.flatten.inspect %>')
-    $opt_timer = "  timer => ${arr_timer}\n"
+  if ($gauge != '') {
+    validate_hash($gauge)
+    $var_gauge = $gauge
+    $arr_gauge = inline_template('<%= "["+var_gauge.sort.collect { |k,v| "\"#{k}\", \"#{v}\"" }.join(", ")+"]" %>')
+    $opt_gauge = "  gauge => ${arr_gauge}\n"
   }
 
-  if $counter {
+  if ($uniform != '') {
+    validate_hash($uniform)
+    $var_uniform = $uniform
+    $arr_uniform = inline_template('<%= "["+var_uniform.sort.collect { |k,v| "\"#{k}\", \"#{v}\"" }.join(", ")+"]" %>')
+    $opt_uniform = "  uniform => ${arr_uniform}\n"
+  }
+
+  if ($counter != '') {
     validate_hash($counter)
-    $arr_counter = inline_template('<%= counter.to_a.flatten.inspect %>')
+    $var_counter = $counter
+    $arr_counter = inline_template('<%= "["+var_counter.sort.collect { |k,v| "\"#{k}\", \"#{v}\"" }.join(", ")+"]" %>')
     $opt_counter = "  counter => ${arr_counter}\n"
   }
 
-  if $port {
+  if ($timer != '') {
+    validate_hash($timer)
+    $var_timer = $timer
+    $arr_timer = inline_template('<%= "["+var_timer.sort.collect { |k,v| "\"#{k}\", \"#{v}\"" }.join(", ")+"]" %>')
+    $opt_timer = "  timer => ${arr_timer}\n"
+  }
+
+  if ($port != '') {
     if ! is_numeric($port) {
       fail("\"${port}\" is not a valid port parameter value")
     } else {
@@ -213,25 +241,23 @@ define logstash::output::metriccatcher (
     }
   }
 
-  if $type {
+  if ($type != '') {
     validate_string($type)
     $opt_type = "  type => \"${type}\"\n"
   }
 
-  if $host {
+  if ($host != '') {
     validate_string($host)
     $opt_host = "  host => \"${host}\"\n"
   }
 
   #### Write config file
 
-  file { "${logstash::params::configdir}/output_metriccatcher_${name}":
+  file { $conffiles:
     ensure  => present,
     content => "output {\n metriccatcher {\n${opt_biased}${opt_counter}${opt_exclude_tags}${opt_fields}${opt_gauge}${opt_host}${opt_meter}${opt_port}${opt_tags}${opt_timer}${opt_type}${opt_uniform} }\n}\n",
-    owner   => 'root',
-    group   => 'root',
-    mode    => '0644',
-    notify  => Class['logstash::service'],
+    mode    => '0440',
+    notify  => Service[$services],
     require => Class['logstash::package', 'logstash::config']
   }
 }

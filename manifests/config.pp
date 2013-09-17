@@ -24,24 +24,42 @@
 #
 class logstash::config {
 
-  #### Configuration
-
-  exec { 'create_config_dir':
-    cwd     => '/',
-    path    => ['/usr/bin', '/bin'],
-    command => "mkdir -p ${logstash::params::configdir}",
-    creates => $logstash::params::configdir;
+  File {
+    owner => $logstash::logstash_user,
+    group => $logstash::logstash_group
   }
 
-  ### Manage the config directory
-  file { $logstash::params::configdir:
+  if $logstash::multi_instance == true {
+
+    # Setup and manage config dirs for the instances
+    logstash::configdir { $logstash::instances:; }
+
+  } else {
+
+    # Manage the single config dir
+    file { "${logstash::configdir}/conf.d":
+      ensure  => directory,
+      mode    => '0640',
+      purge   => true,
+      recurse => true,
+      notify  => Service['logstash']
+    }
+  }
+
+  $tmp_dir = "${logstash::installpath}/tmp"
+
+  #### Create the tmp dir
+  exec { 'create_tmp_dir':
+    cwd     => '/',
+    path    => ['/usr/bin', '/bin'],
+    command => "mkdir -p ${tmp_dir}",
+    creates => $tmp_dir;
+  }
+
+  file { $tmp_dir:
     ensure  => directory,
-    owner   => 'root',
-    group   => 'root',
-    mode    => '0644',
-    purge   => true,
-    recurse => true,
-    require => Exec['create_config_dir']
+    mode    => '0640',
+    require => Exec[ 'create_tmp_dir' ]
   }
 
 }
